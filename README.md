@@ -27,7 +27,7 @@ Desktop GUI software for batch preprocessing of 2D diffraction images from synch
 - [Security](SECURITY.md)
 - [Zenodo DOI Plan](docs/ZENODO_DOI_PLAN.md)
 - [Changelog](CHANGELOG.md)
-- [Release Notes](docs/RELEASE_v6.0.0.md)
+- [Release Notes](docs/RELEASE_v6.0.1.md)
 
 ## Features / 功能特性
 
@@ -161,9 +161,9 @@ Suggested BibTeX entry:
 
 ```bibtex
 @software{d_sudoasd_2d_diffraction_ring_preprocessor_2026,
-  author  = {D-sudoasd},
+  author  = {Gong, Delun},
   title   = {2D Diffraction Ring Preprocessor},
-  version = {6.0.0},
+  version = {6.0.1},
   year    = {2026},
   url     = {https://github.com/D-sudoasd/2d-image-processor}
 }
@@ -174,7 +174,7 @@ If you want DOI-based citation later, connect the repository to Zenodo before cr
 ## Changelog and Releases / 更新日志与版本发布
 
 - Detailed history: [CHANGELOG.md](CHANGELOG.md)
-- First public release notes: [docs/RELEASE_v6.0.0.md](docs/RELEASE_v6.0.0.md)
+- Current release notes: [docs/RELEASE_v6.0.1.md](docs/RELEASE_v6.0.1.md)
 - GitHub releases page: https://github.com/D-sudoasd/2d-image-processor/releases
 
 ## Community / 社区协作

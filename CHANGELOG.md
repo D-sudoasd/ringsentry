@@ -5,6 +5,28 @@ All notable changes to the 2D Diffraction Ring Preprocessor.
 
 ---
 
+## [v6.0.1] — 2026-04-16
+
+### Added / 新增
+
+- **Citation metadata upgrade** — Added ORCID-linked authorship and institutional affiliation in repository citation metadata
+  - 引用元数据升级 — 在仓库引用元数据中加入 ORCID 绑定作者身份与机构信息
+- **Zenodo archival metadata** — Added `.zenodo.json` for stronger Zenodo DOI attribution and archival control
+  - Zenodo 归档元数据 — 新增 `.zenodo.json`，用于更强的 DOI 署名绑定与归档控制
+- **Community documentation** — Added `CONTRIBUTING.md` and `SECURITY.md`
+  - 社区文档 — 新增 `CONTRIBUTING.md` 与 `SECURITY.md`
+- **Local publish helper** — Added local `publish_update.cmd` / `publish_update.ps1` workflow for commit-and-push automation
+  - 本地发布辅助脚本 — 新增 `publish_update.cmd` / `publish_update.ps1`，用于自动提交和推送
+
+### Changed / 变更
+
+- **README presentation** — Reworked the GitHub landing page layout for public release, citation, and release navigation
+  - README 展示优化 — 重构 GitHub 首页结构，强化公开发布、引用和版本发布导航
+- **Author identity metadata** — Updated citation metadata from GitHub handle-only attribution to `Delun Gong` with ORCID and affiliation
+  - 作者身份元数据 — 将引用元数据从仅 GitHub 用户名更新为 `Delun Gong + ORCID + affiliation`
+
+---
+
 ## [v6.0] — 2026-04
 
 ### Added / 新增

@@ -14,7 +14,7 @@ abstract: >-
   images, including SAXS, WAXS, SXRD, and GIWAXS workflows, with multi-format
   I/O, calibration, preview, geometry transforms, intensity processing, and
   Q conversion tools.
-version: "6.0.0"
+version: "6.0.1"
 date-released: 2026-04-16
 license: MIT
 keywords:
