@@ -23,6 +23,9 @@ Desktop GUI software for batch preprocessing of 2D diffraction images from synch
 - [Features](#features--功能特性)
 - [Supported Formats](#supported-formats--支持格式)
 - [Citation](#citation--引用)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Zenodo DOI Plan](docs/ZENODO_DOI_PLAN.md)
 - [Changelog](CHANGELOG.md)
 - [Release Notes](docs/RELEASE_v6.0.0.md)
 
@@ -173,6 +176,12 @@ If you want DOI-based citation later, connect the repository to Zenodo before cr
 - Detailed history: [CHANGELOG.md](CHANGELOG.md)
 - First public release notes: [docs/RELEASE_v6.0.0.md](docs/RELEASE_v6.0.0.md)
 - GitHub releases page: https://github.com/D-sudoasd/2d-image-processor/releases
+
+## Community / 社区协作
+
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security policy: [SECURITY.md](SECURITY.md)
+- Zenodo DOI workflow: [docs/ZENODO_DOI_PLAN.md](docs/ZENODO_DOI_PLAN.md)
 
 ## License / 许可证
 

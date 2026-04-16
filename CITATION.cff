@@ -3,7 +3,8 @@ message: "If you use this software in your research, please cite it using the me
 title: "2D Diffraction Ring Preprocessor"
 type: software
 authors:
-  - alias: "D-sudoasd"
+  - given-names: "Delun"
+    family-names: "Gong"
 repository-code: "https://github.com/D-sudoasd/2d-image-processor"
 url: "https://github.com/D-sudoasd/2d-image-processor"
 abstract: >-
