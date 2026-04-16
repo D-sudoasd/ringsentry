@@ -1,0 +1,25 @@
+{
+  "creators": [
+    {
+      "name": "Gong, Delun",
+      "orcid": "0000-0001-7877-7707",
+      "affiliation": "Institute of Metal Research (IMR), Chinese Academy of Sciences (CAS)",
+      "type": "ProjectMember"
+    }
+  ],
+  "title": "2D Diffraction Ring Preprocessor",
+  "version": "6.0.0",
+  "access_right": "open",
+  "license": "mit",
+  "upload_type": "software",
+  "language": "eng",
+  "keywords": [
+    "2D diffraction",
+    "SAXS",
+    "WAXS",
+    "SXRD",
+    "GIWAXS",
+    "image preprocessing",
+    "materials science"
+  ]
+}

@@ -124,11 +124,38 @@ For your academic use case, the most defensible target is:
 
 That combination is much stronger for authorship attribution, software citation, academic CV use, and grant / paper reporting than using only a GitHub username.
 
-## What is still missing right now
+## Current repository status
 
-To finish the strongest DOI-binding setup, the repository still needs your:
+The repository metadata can now be prepared as:
 
-- ORCID iD
-- preferred affiliation string
+- creator name: `Delun Gong`
+- ORCID iD: `0000-0001-7877-7707`
+- affiliation: `Institute of Metal Research (IMR), Chinese Academy of Sciences (CAS)`
 
-Once those two values are known, the next concrete step is to add `.zenodo.json` and push it before the next Zenodo-tracked release.
+The recommended next repository step is to keep `.zenodo.json` and `CITATION.cff` aligned before the next archival release.
+
+## What to do next in practice
+
+1. Link your **GitHub** and **ORCID** accounts inside Zenodo.
+2. Enable this repository in the Zenodo GitHub integration.
+3. Before the next archival release, bump the version in:
+   - `CHANGELOG.md`
+   - `CITATION.cff`
+   - `.zenodo.json`
+4. Create a new GitHub release such as `v6.0.1`.
+5. Wait for Zenodo to archive it and mint the DOI.
+6. Verify in the Zenodo record that:
+   - creator is `Delun Gong`
+   - ORCID is shown correctly
+   - affiliation is shown correctly
+7. Add the DOI to ORCID if it does not sync automatically.
+
+## Recommendation on public contact details
+
+For DOI binding and software citation, it is usually sufficient to publish:
+
+- real name
+- ORCID
+- affiliation
+
+It is generally **not necessary** to include a telephone number or direct email address in Zenodo archival metadata unless you explicitly want them to be permanently public.

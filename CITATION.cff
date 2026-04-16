@@ -5,6 +5,8 @@ type: software
 authors:
   - given-names: "Delun"
     family-names: "Gong"
+    affiliation: "Institute of Metal Research (IMR), Chinese Academy of Sciences (CAS)"
+    orcid: "https://orcid.org/0000-0001-7877-7707"
 repository-code: "https://github.com/D-sudoasd/2d-image-processor"
 url: "https://github.com/D-sudoasd/2d-image-processor"
 abstract: >-
