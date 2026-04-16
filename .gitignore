@@ -1,0 +1,38 @@
+# Python bytecode / Python 字节码
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / 分发
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments / 虚拟环境
+.venv/
+venv/
+env/
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.spyderproject
+.spyproject
+
+# Jupyter / 笔记本
+.ipynb_checkpoints/
+
+# Application runtime / 应用运行时
+config.json
+
+# OS files / 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code / Claude Code 配置
+.claude/
