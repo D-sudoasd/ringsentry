@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it using the metadata from this file."
+title: "2D Diffraction Ring Preprocessor"
+type: software
+authors:
+  - alias: "D-sudoasd"
+repository-code: "https://github.com/D-sudoasd/2d-image-processor"
+url: "https://github.com/D-sudoasd/2d-image-processor"
+abstract: >-
+  Desktop GUI software for batch preprocessing of 2D diffraction detector
+  images, including SAXS, WAXS, SXRD, and GIWAXS workflows, with multi-format
+  I/O, calibration, preview, geometry transforms, intensity processing, and
+  Q conversion tools.
+version: "6.0.0"
+date-released: 2026-04-16
+license: MIT
+keywords:
+  - 2D diffraction
+  - SAXS
+  - WAXS
+  - SXRD
+  - GIWAXS
+  - image preprocessing
+  - diffraction detector
