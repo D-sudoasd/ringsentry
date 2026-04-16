@@ -9,6 +9,7 @@ SAXS · WAXS · SXRD · GIWAXS
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](requirements.txt)
 [![Platform Windows](https://img.shields.io/badge/platform-Windows-0078D6.svg)](README.md)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19602728.svg)](https://doi.org/10.5281/zenodo.19602728)
 [![GitHub stars](https://img.shields.io/github/stars/D-sudoasd/2d-image-processor?style=social)](https://github.com/D-sudoasd/2d-image-processor/stargazers)
 
 </div>
@@ -23,6 +24,7 @@ Desktop GUI software for batch preprocessing of 2D diffraction images from synch
 - [Features](#features--功能特性)
 - [Supported Formats](#supported-formats--支持格式)
 - [Citation](#citation--引用)
+- [Archive DOI](https://doi.org/10.5281/zenodo.19602728)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Zenodo DOI Plan](docs/ZENODO_DOI_PLAN.md)
@@ -153,7 +155,12 @@ Key modules:
 
 ## Citation / 引用
 
-If you use this software in academic work, please cite the repository metadata in [CITATION.cff](CITATION.cff).
+If you use this software in academic work, please cite the repository metadata in [CITATION.cff](CITATION.cff). Zenodo archival DOIs are now available:
+
+- Concept DOI for the software project: [`10.5281/zenodo.19602728`](https://doi.org/10.5281/zenodo.19602728)
+- Version DOI for release `v6.0.1`: [`10.5281/zenodo.19602729`](https://doi.org/10.5281/zenodo.19602729)
+
+For reproducibility, cite the version DOI when your work depends on a specific release. Use the concept DOI when you want to reference the software project as a whole.
 
 如果你在学术工作中使用本软件，请优先参考仓库中的 [CITATION.cff](CITATION.cff)。
 
@@ -165,11 +172,10 @@ Suggested BibTeX entry:
   title   = {2D Diffraction Ring Preprocessor},
   version = {6.0.1},
   year    = {2026},
-  url     = {https://github.com/D-sudoasd/2d-image-processor}
+  doi     = {10.5281/zenodo.19602729},
+  url     = {https://doi.org/10.5281/zenodo.19602729}
 }
 ```
-
-If you want DOI-based citation later, connect the repository to Zenodo before creating an archival release.
 
 ## Changelog and Releases / 更新日志与版本发布
 
