@@ -7,27 +7,33 @@ import threading
 import concurrent.futures
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
-import numpy as np
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, messagebox
 
 from gui.styles import apply_theme, configure_styles
 from gui.tabs.io_tab import IOTab
 from gui.tabs.processing_tab import ProcessingTab
 from gui.tabs.output_tab import OutputTab
 from gui.tabs.geometry_tab import GeometryTab
+from gui.tabs.quality_tab import QualityTab
+from gui.tabs.overexposure_tab import OverexposureRepairTab
 from gui.tabs.q_calculator_tab import QCalculatorTab
 from gui.log_panel import LogPanel
 from gui.preview import show_preview
 from core.constants import APP_TITLE, APP_VERSION, CONFIG_FILE, DEFAULT_H5_PATH
-from core.utils import parse_roi_text, parse_optional_float
+from core.utils import get_output_base_name, parse_roi_text, parse_optional_float
 from core.loader import (
     load_image,
+    load_image_with_info,
     sniff_file_kind,
     find_files_recursive,
     build_filelist_from_selected_paths,
+)
+from core.quality import (
+    analyze_image_quality,
+    assess_processing_plan,
+    quality_summary_line,
 )
 from core.worker import process_one_file
 
@@ -60,6 +66,7 @@ class App(tk.Tk):
             "skipped": 0, "cancelled": 0,
         }
         self.start_time = None
+        self.last_quality_reports = []
 
         self._create_widgets()
         self._load_config()
@@ -79,15 +86,23 @@ class App(tk.Tk):
         self.processing_tab = ProcessingTab(self.notebook, self)
         self.notebook.add(self.processing_tab, text="  \u9884\u5904\u7406  ")
 
-        # Tab 3: Output Formats
+        # Tab 3: Automatic QC
+        self.quality_tab = QualityTab(self.notebook, self)
+        self.notebook.add(self.quality_tab, text="  \u81EA\u52A8\u8D28\u63A7  ")
+
+        # Tab 4: CBF overexposure repair
+        self.overexposure_tab = OverexposureRepairTab(self.notebook, self)
+        self.notebook.add(self.overexposure_tab, text="  \u8FC7\u66DD\u4FEE\u590D  ")
+
+        # Tab 5: Output Formats
         self.output_tab = OutputTab(self.notebook, self)
         self.notebook.add(self.output_tab, text="  \u8F93\u51FA\u683C\u5F0F  ")
 
-        # Tab 4: Geometry
+        # Tab 6: Geometry
         self.geometry_tab = GeometryTab(self.notebook, self)
         self.notebook.add(self.geometry_tab, text="  \u51E0\u4F55\u53D8\u6362  ")
 
-        # Tab 5: Q Calculator
+        # Tab 7: Q Calculator
         self.q_calc_tab = QCalculatorTab(self.notebook, self)
         self.notebook.add(self.q_calc_tab, text="  Q \u8BA1\u7B97\u5668  ")
 
@@ -256,6 +271,7 @@ class App(tk.Tk):
     ):
         errors = []
         warnings = []
+        self.last_quality_reports = []
 
         if (
             min_intensity is not None
@@ -275,16 +291,68 @@ class App(tk.Tk):
         except Exception as e:
             errors.append(f"\u8F93\u51FA\u76EE\u5F55\u4E0D\u53EF\u5199: {outroot} ({e})")
 
-        sample_img = None
-        sample_file = self.filelist[0][0] if self.filelist else None
-        if sample_file is not None:
+        if not self.output_tab.overwrite_var.get():
+            existing_outputs = 0
+            for fp, rel_path in self.filelist:
+                base_name = get_output_base_name(fp)
+                for fmt in formats:
+                    ext = {"xycsv": "csv", "xydat": "dat"}.get(fmt, fmt)
+                    out_path = Path(outroot) / rel_path.parent / fmt / f"{base_name}.{ext}"
+                    if out_path.exists():
+                        existing_outputs += 1
+                if existing_outputs > 20:
+                    break
+            if existing_outputs:
+                warnings.append(
+                    "\u68C0\u6D4B\u5230\u5DF2\u5B58\u5728\u7684\u8F93\u51FA\u6587\u4EF6\u3002"
+                    "\u672A\u52FE\u9009\u8986\u76D6\u65F6\u8FD9\u4E9B\u6587\u4EF6\u4F1A\u88AB\u8DF3\u8FC7\uFF0C"
+                    f"\u62BD\u67E5\u8BA1\u6570={existing_outputs}\u3002"
+                )
+
+        sample_infos = []
+        shape_to_files = {}
+        sample_entries = self.filelist[:min(5, len(self.filelist))]
+        for sample_file, _ in sample_entries:
             try:
-                sample_img = load_image(
+                loaded = load_image_with_info(
                     sample_file, self.io_tab.h5_path_var.get()
                 )
+                sample_img = loaded["data"]
+                report = analyze_image_quality(
+                    sample_img,
+                    metadata=loaded["metadata"],
+                    source_name=sample_file.name,
+                )
+                report.findings.extend(
+                    assess_processing_plan(
+                        report,
+                        formats=formats,
+                        roi=roi,
+                        bin_factor=bin_factor,
+                        rotate_deg=self.geometry_tab.rotate_var.get(),
+                    )
+                )
+                report.review_required = any(
+                    item.level in {"WARNING", "ERROR"}
+                    for item in report.findings
+                )
+                self.last_quality_reports.append(report)
+                sample_infos.append((sample_file, sample_img, report))
+                shape_to_files.setdefault(sample_img.shape, []).append(
+                    sample_file.name
+                )
+                for finding in report.findings:
+                    text = (
+                        f"{sample_file.name}: {finding.message} "
+                        f"({finding.basis})"
+                    )
+                    if finding.level == "ERROR":
+                        errors.append(text)
+                    elif finding.level == "WARNING":
+                        warnings.append(text)
             except Exception as e:
                 errors.append(
-                    f"\u65E0\u6CD5\u8BFB\u53D6\u9996\u4E2A\u6587\u4EF6: {sample_file.name} ({e})"
+                    f"\u65E0\u6CD5\u8BFB\u53D6\u62BD\u6837\u6587\u4EF6 {sample_file.name}: {e}"
                 )
 
         # HDF5 check
@@ -295,63 +363,73 @@ class App(tk.Tk):
                     h5_files.append(fp)
             except Exception:
                 continue
-        if h5_files:
+        for h5_file in h5_files[:5]:
             try:
-                _ = load_image(h5_files[0], self.io_tab.h5_path_var.get())
+                _ = load_image_with_info(h5_file, self.io_tab.h5_path_var.get())
             except Exception as e:
                 errors.append(
-                    f"HDF5 \u8DEF\u5F84\u68C0\u67E5\u5931\u8D25 {h5_files[0].name}: {e}"
+                    f"HDF5 \u8DEF\u5F84\u68C0\u67E5\u5931\u8D25 {h5_file.name}: {e}"
                 )
 
-        if sample_img is not None:
-            h0, w0 = sample_img.shape
+        if len(shape_to_files) > 1:
+            shape_text = ", ".join(
+                f"{shape}: {len(names)}\u4E2A" for shape, names in shape_to_files.items()
+            )
+            warnings.append(
+                "\u62BD\u6837\u6587\u4EF6\u5C3A\u5BF8\u4E0D\u4E00\u81F4\u3002"
+                "\u5982\u679C\u4F7F\u7528 dark/flat/mask \u6216 ROI\uFF0C"
+                f"\u8BF7\u9010\u5C3A\u5BF8\u590D\u6838\u3002{shape_text}"
+            )
+
+        def effective_shape(shape):
+            h0, w0 = shape
+            if roi is not None:
+                _, _, roi_w, roi_h = roi
+                h0, w0 = roi_h, roi_w
+            if self.geometry_tab.rotate_var.get() in ("90", "270"):
+                h0, w0 = w0, h0
+            return h0, w0
+
+        for sample_file, sample_img, _ in sample_infos:
             if self.dark_frame is not None and self.dark_frame.shape != sample_img.shape:
                 errors.append(
-                    f"\u6697\u5E27\u5C3A\u5BF8\u4E0D\u5339\u914D\u3002\u6697\u5E27={self.dark_frame.shape}, \u6837\u672C={sample_img.shape}"
+                    f"{sample_file.name}: \u6697\u5E27\u5C3A\u5BF8\u4E0D\u5339\u914D\u3002"
+                    f"\u6697\u5E27={self.dark_frame.shape}, \u6837\u672C={sample_img.shape}"
                 )
             if self.mask_frame is not None and self.mask_frame.shape != sample_img.shape:
                 errors.append(
-                    f"\u63A9\u819C\u5C3A\u5BF8\u4E0D\u5339\u914D\u3002\u63A9\u819C={self.mask_frame.shape}, \u6837\u672C={sample_img.shape}"
+                    f"{sample_file.name}: \u63A9\u819C\u5C3A\u5BF8\u4E0D\u5339\u914D\u3002"
+                    f"\u63A9\u819C={self.mask_frame.shape}, \u6837\u672C={sample_img.shape}"
                 )
             if self.flat_frame is not None and self.flat_frame.shape != sample_img.shape:
                 errors.append(
-                    f"\u5E73\u573A\u5C3A\u5BF8\u4E0D\u5339\u914D\u3002\u5E73\u573A={self.flat_frame.shape}, \u6837\u672C={sample_img.shape}"
+                    f"{sample_file.name}: \u5E73\u573A\u5C3A\u5BF8\u4E0D\u5339\u914D\u3002"
+                    f"\u5E73\u573A={self.flat_frame.shape}, \u6837\u672C={sample_img.shape}"
                 )
 
-            if roi is not None:
-                x, y, w, h = roi
-                if x + w > w0 or y + h > h0:
-                    errors.append(f"ROI {roi} \u8D85\u51FA\u6837\u672C\u8303\u56F4 {sample_img.shape}")
-                eff_h, eff_w = h, w
-            else:
-                eff_h, eff_w = h0, w0
-
-            if bin_factor > min(eff_h, eff_w):
-                errors.append(
-                    f"Binning \u56E0\u5B50 {bin_factor} \u5BF9\u56FE\u50CF\u5C3A\u5BF8 {(eff_h, eff_w)} \u8FC7\u5927"
-                )
-            elif bin_factor > 1 and (
-                (eff_h % bin_factor) != 0 or (eff_w % bin_factor) != 0
-            ):
-                warnings.append(
-                    f"Binning={bin_factor} \u4F1A\u88C1\u526A\u8FB9\u7F18\uFF0C\u56E0\u4E3A\u5C3A\u5BF8 {(eff_h, eff_w)} \u4E0D\u53EF\u6574\u9664"
-                )
-
+            eff_h, eff_w = effective_shape(sample_img.shape)
             geo = self.geometry_tab
             if (
                 geo.hot_pixel_enable_var.get()
                 and geo.hot_pixel_window_var.get() > min(eff_h, eff_w)
             ):
                 warnings.append(
-                    f"\u70ED\u50CF\u7D20\u7A97\u53E3 ({geo.hot_pixel_window_var.get()}) \u5BF9\u56FE\u50CF\u5C3A\u5BF8 {(eff_h, eff_w)} \u8FC7\u5927"
+                    f"{sample_file.name}: \u70ED\u50CF\u7D20\u7A97\u53E3 "
+                    f"({geo.hot_pixel_window_var.get()}) \u5BF9\u56FE\u50CF\u5C3A\u5BF8 "
+                    f"{(eff_h, eff_w)} \u8FC7\u5927"
                 )
 
-            if any(fmt in ("xycsv", "xydat") for fmt in formats):
-                est_points = eff_h * eff_w * len(self.filelist)
-                if est_points > 5e7:
-                    warnings.append(
-                        f"\u4F30\u8BA1 XY \u70B9\u6570 ~{int(est_points):,}\uFF1B\u8FD0\u884C\u53EF\u80FD\u8F83\u6162\u4E14\u8F93\u51FA\u6587\u4EF6\u5F88\u5927"
-                    )
+        if sample_infos and any(fmt in ("xycsv", "xydat") for fmt in formats):
+            max_h, max_w = max(
+                (effective_shape(img.shape) for _, img, _ in sample_infos),
+                key=lambda shape: shape[0] * shape[1],
+            )
+            est_points = max_h * max_w * len(self.filelist)
+            if est_points > 5e7:
+                warnings.append(
+                    f"\u4F30\u8BA1 XY \u70B9\u6570 ~{int(est_points):,}\uFF1B"
+                    "\u8FD0\u884C\u53EF\u80FD\u8F83\u6162\u4E14\u8F93\u51FA\u6587\u4EF6\u5F88\u5927"
+                )
 
         if errors:
             text = "Preflight \u68C0\u67E5\u5931\u8D25:\n\n- " + "\n- ".join(errors)
@@ -368,7 +446,10 @@ class App(tk.Tk):
             self.log("Preflight \u8B66\u544A: " + " | ".join(warnings))
             return messagebox.askyesno("Preflight \u8B66\u544A", text)
 
-        self.log("Preflight \u68C0\u67E5\u901A\u8FC7\u3002")
+        self.log(
+            f"Preflight \u68C0\u67E5\u901A\u8FC7\uFF0C\u5DF2\u62BD\u6837\u8D28\u63A7 "
+            f"{len(self.last_quality_reports)} \u4E2A\u6587\u4EF6\u3002"
+        )
         return True
 
     # --- UI State ---
@@ -703,19 +784,87 @@ class App(tk.Tk):
             elapsed_sec = int((datetime.now() - self.start_time).total_seconds())
             elapsed = f"{elapsed_sec}s"
 
+        formats = [
+            fmt for fmt, var in self.output_tab.format_vars.items() if var.get()
+        ]
+        manual_review_logs = [
+            line
+            for line in run_logs
+            if "REVIEW:" in line or "WARNING:" in line or "FAILED:" in line
+        ]
+        qc_reports = list(self.last_quality_reports)
+        qc_review_reports = [
+            report for report in qc_reports if report.review_required
+        ]
+
         lines = [
             f"{APP_TITLE} {APP_VERSION}",
             f"Timestamp: {datetime.now().isoformat(timespec='seconds')}",
             f"Input Mode: {self.io_tab.input_mode_var.get()}",
+            f"Input Count: {len(self.filelist)}",
             f"Output: {outroot}",
+            f"Formats: {', '.join(formats)}",
             f"Elapsed: {elapsed}",
             f"Success: {self.stats['success']}",
             f"Failed: {self.stats['failed']}",
             f"Skipped: {self.stats['skipped']}",
             f"Cancelled: {self.stats['cancelled']}",
             "",
-            "---- Logs ----",
+            "---- Processing Parameters ----",
+            f"HDF5 Path: {self.io_tab.h5_path_var.get()}",
+            f"ROI: {self.processing_tab.roi_var.get() or '<none>'}",
+            f"Dark Frame: {self.processing_tab.dark_frame_var.get()}",
+            f"Flat Frame: {self.processing_tab.flat_frame_var.get()}",
+            f"Mask Frame: {self.processing_tab.mask_frame_var.get()}",
+            f"Mask Nonzero Invalid: {self.processing_tab.mask_nonzero_is_invalid_var.get()}",
+            f"Clip Negative: {self.processing_tab.clip_negative_var.get()}",
+            f"BG Offset: {self.processing_tab.bg_offset_var.get()}",
+            f"I Min/I Max: {self.processing_tab.min_intensity_var.get()} / {self.processing_tab.max_intensity_var.get()}",
+            f"Rotate: {self.geometry_tab.rotate_var.get()}",
+            f"Flip X/Y: {self.geometry_tab.flip_x_var.get()} / {self.geometry_tab.flip_y_var.get()}",
+            f"Binning: {self.geometry_tab.bin_factor_var.get()}",
+            f"Percentile Clip: {self.geometry_tab.pclip_low_var.get()} / {self.geometry_tab.pclip_high_var.get()}",
+            f"Intensity Transform: {self.geometry_tab.intensity_transform_var.get()}",
+            f"Gamma: {self.geometry_tab.gamma_var.get()}",
+            f"Normalization: {self.geometry_tab.norm_mode_var.get()}",
+            f"Hot Pixel: {self.geometry_tab.hot_pixel_enable_var.get()} "
+            f"(window={self.geometry_tab.hot_pixel_window_var.get()}, "
+            f"sigma={self.geometry_tab.hot_pixel_sigma_var.get()})",
+            "",
+            "---- Preflight QC Sample Summary ----",
         ]
+        if qc_reports:
+            for report in qc_reports:
+                lines.append(quality_summary_line(report))
+                for finding in report.findings:
+                    lines.append(
+                        f"  [{finding.level}] {finding.message} ({finding.basis})"
+                    )
+                for suggestion in report.suggestions:
+                    lines.append(
+                        f"  [SUGGESTION] {suggestion.action} "
+                        f"Basis: {suggestion.reason}"
+                    )
+        else:
+            lines.append("<no preflight QC sample recorded>")
+
+        lines.extend([
+            "",
+            "---- Manual Review Required ----",
+        ])
+        if qc_review_reports or manual_review_logs:
+            for report in qc_review_reports:
+                lines.append(
+                    f"{report.source_name}: preflight QC warning/error present"
+                )
+            lines.extend(manual_review_logs)
+        else:
+            lines.append("<none recorded>")
+
+        lines.extend([
+            "",
+            "---- Logs ----",
+        ])
         lines.extend(run_logs)
         report_path.write_text("\n".join(lines), encoding="utf-8")
         return report_path

@@ -12,6 +12,8 @@ worker
     Threaded batch-processing worker function.
 writer
     Multi-format output writers (TIFF, EDF, NPY, CSV, XY, DAT).
+overexposure_repair
+    CBF zero-to-saturation repair for overexposure saved as zero pixels.
 utils
     Shared utility functions (ROI parsing, rebinning, stats).
 edf_io

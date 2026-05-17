@@ -17,7 +17,6 @@ from pathlib import Path
 import numpy as np
 
 from core.loader import load_image, _lazy_import_matplotlib
-from core.utils import summarize_array_stats
 
 
 def show_gallery(app):

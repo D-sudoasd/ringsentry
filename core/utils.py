@@ -1,17 +1,11 @@
 """Utility functions for the image processor."""
 
-import re
 from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
 
 from .constants import (
-    TIFF_SUFFIXES,
-    FABIO_OPTIONAL_SUFFIXES,
-    HDF5_SUFFIXES,
-    EDF_SUFFIXES,
-    SUPPORTED_FORMATS,
     NUMERIC_FRAME_SUFFIX_RE,
 )
 

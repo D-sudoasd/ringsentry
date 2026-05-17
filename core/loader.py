@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 
@@ -12,7 +12,6 @@ from .constants import (
     HDF5_SUFFIXES,
     EDF_SUFFIXES,
     SUPPORTED_FORMATS,
-    NUMERIC_FRAME_SUFFIX_RE,
     DEFAULT_H5_PATH,
 )
 from .utils import is_numeric_frame_suffix
@@ -194,6 +193,43 @@ def _load_hdf5_dataset(file: Path, h5_path: str):
         return current[()]
 
 
+def _load_with_fabio(file: Path) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Load an image through FabIO and return data plus selected metadata."""
+    fab = _lazy_import_fabio()
+    with fab.open(str(file)) as img:
+        arr = img.data.copy()
+        header = dict(getattr(img, "header", {}) or {})
+
+    meta: Dict[str, Any] = {}
+    for key in (
+        "conversions",
+        "Content-Type",
+        "Content-Transfer-Encoding",
+        "X-Binary-Element-Type",
+        "X-Binary-Element-Byte-Order",
+        "X-Binary-Number-of-Elements",
+        "X-Binary-Size-Fastest-Dimension",
+        "X-Binary-Size-Second-Dimension",
+        "X-Binary-Size-Padding",
+    ):
+        if key in header:
+            meta[key] = str(header[key])
+
+    expected_elements = meta.get("X-Binary-Number-of-Elements")
+    if expected_elements is not None:
+        try:
+            expected = int(expected_elements)
+        except Exception:
+            expected = None
+        if expected is not None and expected != int(np.asarray(arr).size):
+            raise ValueError(
+                f"{file.name}: CBF 元素数量不匹配，header={expected}, "
+                f"decoded={int(np.asarray(arr).size)}"
+            )
+
+    return arr, meta
+
+
 # --- Public API ---
 
 def load_image_with_info(
@@ -220,19 +256,16 @@ def load_image_with_info(
         try:
             arr = read_edf(file)
         except Exception:
-            fab = _lazy_import_fabio()
-            with fab.open(str(file)) as img:
-                arr = img.data.copy()
+            arr, fabio_meta = _load_with_fabio(file)
+            metadata.update(fabio_meta)
     elif kind == 'hdf5':
         arr = _load_hdf5_dataset(file, h5_path)
     elif kind == 'cbf':
-        fab = _lazy_import_fabio()
-        with fab.open(str(file)) as img:
-            arr = img.data.copy()
+        arr, fabio_meta = _load_with_fabio(file)
+        metadata.update(fabio_meta)
     elif kind == 'fabio':
-        fab = _lazy_import_fabio()
-        with fab.open(str(file)) as img:
-            arr = img.data.copy()
+        arr, fabio_meta = _load_with_fabio(file)
+        metadata.update(fabio_meta)
     else:
         raise ValueError(f"\u4E0D\u652F\u6301\u7684\u683C\u5F0F: {kind}")
 

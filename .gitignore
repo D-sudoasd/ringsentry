@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.ruff_cache/
 
 # Distribution / 分发
 dist/
@@ -28,6 +30,11 @@ env/
 
 # Application runtime / 应用运行时
 config.json
+_converted/
+run_report_*.txt
+*.tmp
+*.bak
+*.log
 
 # OS files / 操作系统文件
 .DS_Store

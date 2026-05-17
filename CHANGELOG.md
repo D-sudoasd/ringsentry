@@ -15,8 +15,8 @@ All notable changes to the 2D Diffraction Ring Preprocessor.
   - Zenodo 归档元数据 — 新增 `.zenodo.json`，用于更强的 DOI 署名绑定与归档控制
 - **Community documentation** — Added `CONTRIBUTING.md` and `SECURITY.md`
   - 社区文档 — 新增 `CONTRIBUTING.md` 与 `SECURITY.md`
-- **Local publish helper** — Added local `publish_update.cmd` / `publish_update.ps1` workflow for commit-and-push automation
-  - 本地发布辅助脚本 — 新增 `publish_update.cmd` / `publish_update.ps1`，用于自动提交和推送
+- **Local publish helper** — Added local `tools/publish_update.cmd` / `tools/publish_update.ps1` workflow for commit-and-push automation
+  - 本地发布辅助脚本 — 新增 `tools/publish_update.cmd` / `tools/publish_update.ps1`，用于自动提交和推送
 
 ### Changed / 变更
 

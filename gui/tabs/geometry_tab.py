@@ -53,7 +53,11 @@ class GeometryTab(ttk.Frame):
             bin_frame, from_=1, to=16, textvariable=self.bin_factor_var, width=6
         )
         sp_bin.pack(side="left", padx=5)
-        ToolTip(sp_bin, "\u5408\u5E76\u56E0\u5B50\uFF0C\u5C06\u56FE\u50CF\u5206\u5757\u53D6\u5747\u503C\u964D\u4F4E\u5206\u8FA8\u7387")
+        ToolTip(
+            sp_bin,
+            "\u5408\u5E76\u56E0\u5B50\uFF0C\u5C06 factor x factor \u50CF\u7D20\u5757\u53D6\u5747\u503C\u3002\n"
+            "\u5982\u679C\u5C3A\u5BF8\u4E0D\u80FD\u6574\u9664\uFF0C\u53F3\u4FA7/\u5E95\u90E8\u8FB9\u7F18\u4F1A\u88AB\u88C1\u6389\u5E76\u5199\u5165\u65E5\u5FD7\u3002",
+        )
 
         # --- Normalization ---
         norm_frame = ttk.LabelFrame(self, text="\u5F52\u4E00\u5316 (Normalization)", padding=10)
@@ -85,12 +89,24 @@ class GeometryTab(ttk.Frame):
         self.pclip_high_var = tk.StringVar()
 
         ttk.Label(pclip_frame, text="\u4E0B\u9650 %:").grid(row=0, column=0, padx=5)
-        ttk.Entry(pclip_frame, textvariable=self.pclip_low_var, width=10).grid(
+        pclip_low_entry = ttk.Entry(pclip_frame, textvariable=self.pclip_low_var, width=10)
+        pclip_low_entry.grid(
             row=0, column=1, sticky="w", padx=5
         )
         ttk.Label(pclip_frame, text="\u4E0A\u9650 %:").grid(row=0, column=2, padx=5)
-        ttk.Entry(pclip_frame, textvariable=self.pclip_high_var, width=10).grid(
+        pclip_high_entry = ttk.Entry(pclip_frame, textvariable=self.pclip_high_var, width=10)
+        pclip_high_entry.grid(
             row=0, column=3, sticky="w", padx=5
+        )
+        ToolTip(
+            pclip_low_entry,
+            "\u767E\u5206\u4F4D\u4E0B\u9650\uFF0C\u8303\u56F4 0-100\u3002\n"
+            "\u4F8B\u5982 1 \u8868\u793A\u628A\u6700\u4F4E 1% \u6781\u7AEF\u503C\u88C1\u5230\u8BE5\u9608\u503C\u3002",
+        )
+        ToolTip(
+            pclip_high_entry,
+            "\u767E\u5206\u4F4D\u4E0A\u9650\uFF0C\u8303\u56F4 0-100\u3002\n"
+            "\u4F8B\u5982 99 \u8868\u793A\u628A\u6700\u9AD8 1% \u6781\u7AEF\u503C\u88C1\u5230\u8BE5\u9608\u503C\u3002",
         )
 
         # --- Intensity Transform ---
@@ -119,7 +135,11 @@ class GeometryTab(ttk.Frame):
         ttk.Label(trans_frame, text="Gamma:").grid(row=0, column=2, padx=(15, 5))
         ent_gamma = ttk.Entry(trans_frame, textvariable=self.gamma_var, width=8)
         ent_gamma.grid(row=0, column=3, sticky="w")
-        ToolTip(ent_gamma, "Gamma \u6821\u6B63\u6307\u6570\uFF0C>0\uFF0C1.0 \u8868\u793A\u4E0D\u505A\u53D8\u6362")
+        ToolTip(
+            ent_gamma,
+            "Gamma \u6821\u6B63\u6307\u6570\uFF0C\u5FC5\u987B > 0\u3002\n"
+            "1.0 \u8868\u793A\u4E0D\u505A\u53D8\u6362\uFF1B\u5C0F\u4E8E 1 \u4F1A\u62C9\u9AD8\u5F31\u4FE1\u53F7\uFF0C\u5927\u4E8E 1 \u4F1A\u538B\u4F4E\u5F31\u4FE1\u53F7\u3002",
+        )
 
         # --- Hot Pixel Suppression ---
         hot_frame = ttk.LabelFrame(self, text="\u70ED\u50CF\u7D20\u6291\u5236 (Hot Pixel Suppression)", padding=10)

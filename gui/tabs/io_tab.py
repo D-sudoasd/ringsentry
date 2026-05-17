@@ -1,12 +1,10 @@
 """Tab 1: Input/Output configuration."""
 
-import os
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog
 
 from gui.tooltip import ToolTip
-from core.loader import find_files_recursive, build_filelist_from_selected_paths
 
 
 class IOTab(ttk.Frame):

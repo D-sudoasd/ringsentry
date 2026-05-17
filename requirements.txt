@@ -7,3 +7,4 @@ sv-ttk>=2.0
 h5py>=3.0  ; python_version >= "3.8"
 scipy>=1.7
 Pillow>=9.0
+fabio>=2023.4

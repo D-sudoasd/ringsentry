@@ -7,6 +7,12 @@
 
 from gui.app import App
 
-if __name__ == "__main__":
+
+def main():
+    """Start the desktop GUI application."""
     app = App()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

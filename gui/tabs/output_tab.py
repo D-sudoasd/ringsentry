@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from gui.tooltip import ToolTip
-from core.constants import FORMAT_DISPLAY_NAMES, FORMAT_DESCRIPTIONS
+from core.constants import FORMAT_DESCRIPTIONS
 
 
 class OutputTab(ttk.Frame):
@@ -147,12 +147,13 @@ class OutputTab(ttk.Frame):
         self.lossless_matrix_var = tk.BooleanVar(value=True)
         cb_lossless = ttk.Checkbutton(
             general_frame,
-            text='\u65E0\u635F\u539F\u59CB\u5BFC\u51FA EDF/TIFF/NPY (\u4EC5\u5F53\u65E0\u9884\u5904\u7406\u65F6\u751F\u6548)',
+            text='\u65E0\u635F\u539F\u59CB\u5BFC\u51FA EDF/NPY\uFF1BTIFF \u4F18\u5148\u517C\u5BB9\u6027 (\u4EC5\u5F53\u65E0\u9884\u5904\u7406\u65F6\u751F\u6548)',
             variable=self.lossless_matrix_var,
         )
         cb_lossless.pack(anchor='w', pady=2)
         ToolTip(
             cb_lossless,
             "\u542F\u7528\u540E\uFF0C\u53EA\u8981\u6CA1\u6709\u4EFB\u4F55\u9884\u5904\u7406\u6B65\u9AA4\uFF0C\n"
-            "\u5BFC\u51FA EDF/TIFF/NPY \u65F6\u4F1A\u76F4\u63A5\u4FDD\u7559\u539F\u59CB\u50CF\u7D20\u77E9\u9635\u4E0E\u539F\u59CB dtype\u3002",
+            "\u5BFC\u51FA EDF/NPY \u65F6\u4F1A\u76F4\u63A5\u4FDD\u7559\u539F\u59CB\u50CF\u7D20\u77E9\u9635\u4E0E\u539F\u59CB dtype\u3002\n"
+            "CBF int32 \u5BFC\u51FA TIFF \u65F6\u4F1A\u6539\u5199\u4E3A ImageJ/Fiji \u66F4\u6613\u8BFB\u53D6\u7684 dtype\u3002",
         )

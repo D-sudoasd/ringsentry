@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a focused improvement within 2D diffraction image preprocessing.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Research workflow problem
+      description: What preprocessing task is difficult or error-prone today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful behavior change.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope boundary
+      description: Confirm whether this stays within image I/O, preprocessing, QC, preview, or export.
+  - type: textarea
+    id: validation
+    attributes:
+      label: How should this be verified?
+      description: Synthetic data examples, expected logs, GUI behavior, or output checks.
+

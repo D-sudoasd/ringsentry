@@ -6,7 +6,6 @@ from tkinter import ttk, filedialog, messagebox
 
 from gui.tooltip import ToolTip
 from core.loader import load_image
-from core.utils import parse_roi_text, parse_optional_float
 
 
 class ProcessingTab(ttk.Frame):
@@ -176,6 +175,11 @@ class ProcessingTab(ttk.Frame):
         self.bg_offset_var = tk.DoubleVar(value=0.0)
         bg_entry = ttk.Entry(adv_frame, textvariable=self.bg_offset_var, width=10)
         bg_entry.grid(row=0, column=1, sticky="w", padx=5, pady=3)
+        ToolTip(
+            bg_entry,
+            "\u4ECE\u6240\u6709\u50CF\u7D20\u4E2D\u51CF\u53BB\u4E00\u4E2A\u5E38\u6570\u80CC\u666F\u503C\u3002\n"
+            "\u5982\u679C\u4E0D\u786E\u5B9A\uFF0C\u4FDD\u6301 0\u3002",
+        )
 
         self.clip_negative_var = tk.BooleanVar(value=False)
         cb_clip = ttk.Checkbutton(
@@ -190,16 +194,27 @@ class ProcessingTab(ttk.Frame):
             row=1, column=0, sticky="w", padx=5, pady=3
         )
         self.min_intensity_var = tk.StringVar()
-        ttk.Entry(adv_frame, textvariable=self.min_intensity_var, width=10).grid(
+        min_entry = ttk.Entry(adv_frame, textvariable=self.min_intensity_var, width=10)
+        min_entry.grid(
             row=1, column=1, sticky="w", padx=5, pady=3
+        )
+        ToolTip(
+            min_entry,
+            "\u5C0F\u4E8E I Min \u7684\u50CF\u7D20\u4F1A\u88AB\u8BBE\u4E3A NaN\uFF0C\u4E0D\u53C2\u4E0E\u540E\u7EED\u5E73\u5747\u6216\u5BFC\u51FA\u7B5B\u9009\u3002",
         )
 
         ttk.Label(adv_frame, text="\u5F3A\u5EA6\u6700\u5927\u503C (I Max):").grid(
             row=1, column=2, sticky="w", padx=5, pady=3
         )
         self.max_intensity_var = tk.StringVar()
-        ttk.Entry(adv_frame, textvariable=self.max_intensity_var, width=10).grid(
+        max_entry = ttk.Entry(adv_frame, textvariable=self.max_intensity_var, width=10)
+        max_entry.grid(
             row=1, column=3, sticky="w", padx=5, pady=3
+        )
+        ToolTip(
+            max_entry,
+            "\u5927\u4E8E I Max \u7684\u50CF\u7D20\u4F1A\u88AB\u8BBE\u4E3A NaN\u3002\n"
+            "\u5E38\u7528\u4E8E\u6392\u9664\u9971\u548C\u70B9\u6216\u660E\u663E\u5F02\u5E38\u503C\u3002",
         )
 
         # Row 2: Mask polarity

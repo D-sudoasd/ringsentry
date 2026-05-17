@@ -8,6 +8,8 @@ processing_tab
     Tab 2: Preprocessing — dark/flat/mask, ROI, intensity controls.
 output_tab
     Tab 3: Output Format — format selection, XY options, overwrite.
+overexposure_tab
+    CBF overexposure repair — scan, dry-run, repair, and QC reports.
 geometry_tab
     Tab 4: Geometry Transforms — rotation, flip, binning, normalization.
 q_calculator_tab

@@ -40,9 +40,10 @@ class CalibrationManagerDialog(tk.Toplevel):
         super().__init__(parent)
         self.app = app
         self.frame_type = frame_type
+        frame_label = "\u6697\u5E27" if frame_type == "dark" else "\u5E73\u573A"
+        frame_label_en = "Dark" if frame_type == "dark" else "Flat"
         self.title(
-            f"\u7BA1\u7406{'\u6697\u5E27' if frame_type == 'dark' else '\u5E73\u573A'}"
-            f" (Manage {'Dark' if frame_type == 'dark' else 'Flat'} Frames)"
+            f"\u7BA1\u7406{frame_label} (Manage {frame_label_en} Frames)"
         )
         self.geometry("800x550")
         self.transient(parent)
@@ -55,12 +56,11 @@ class CalibrationManagerDialog(tk.Toplevel):
         self._create_widgets()
 
     def _create_widgets(self):
+        frame_label = "\u6697\u5E27" if self.frame_type == "dark" else "\u5E73\u573A"
         # File list
         list_frame = ttk.LabelFrame(
             self,
-            text=f"\u5DF2\u52A0\u8F7D\u7684"
-            f"{'\u6697\u5E27' if self.frame_type == 'dark' else '\u5E73\u573A'}"
-            f"\u6587\u4EF6",
+            text=f"\u5DF2\u52A0\u8F7D\u7684{frame_label}\u6587\u4EF6",
             padding=10,
         )
         list_frame.pack(fill="both", expand=True, padx=10, pady=(10, 5))
@@ -140,10 +140,9 @@ class CalibrationManagerDialog(tk.Toplevel):
 
     def _add_files(self):
         patterns = "*.tif *.tiff *.mccd *.marccd *.cbf *.edf *.h5 *.hdf5 *.*"
+        frame_label = "\u6697\u5E27" if self.frame_type == "dark" else "\u5E73\u573A"
         files = filedialog.askopenfilenames(
-            title=f"\u9009\u62E9"
-            f"{'\u6697\u5E27' if self.frame_type == 'dark' else '\u5E73\u573A'}"
-            f"\u6587\u4EF6",
+            title=f"\u9009\u62E9{frame_label}\u6587\u4EF6",
             filetypes=[
                 ("\u56FE\u50CF\u6587\u4EF6", patterns),
                 ("\u6240\u6709\u6587\u4EF6", "*.*"),

@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a reproducible problem in image loading, preprocessing, GUI, or export.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not upload private beamline data. If a small synthetic example can reproduce the issue, prefer that.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact GUI actions or command-line steps.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Export ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      description: Include relevant WARNING/ERROR lines from the GUI log or run_report file.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Software version
+      placeholder: "v6.0.1"
+  - type: dropdown
+    id: format
+    attributes:
+      label: Input format
+      options:
+        - CBF
+        - EDF
+        - TIFF
+        - HDF5/NeXus
+        - ADSC/Bruker/FabIO format
+        - Other
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, Windows version, and how you launched the app.
+

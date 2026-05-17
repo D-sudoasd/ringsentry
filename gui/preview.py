@@ -1,6 +1,5 @@
 """Image preview window with ROI selection, comparison view, and line profile."""
 
-from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 

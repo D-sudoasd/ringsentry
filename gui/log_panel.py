@@ -47,6 +47,11 @@ class LogPanel(ttk.Frame):
             style="Accent.TButton",
         )
         self.run_btn.grid(row=0, column=3, padx=5)
+        ToolTip(
+            self.run_btn,
+            "\u5F00\u59CB\u6279\u5904\u7406\u3002\u5EFA\u8BAE\u5148\u5728\u201C\u81EA\u52A8\u8D28\u63A7\u201D\u9875\u62BD\u6837\u68C0\u67E5\uFF0C"
+            "\u518D\u6839\u636E\u62A5\u544A\u51B3\u5B9A\u662F\u5426\u542F\u7528\u70ED\u50CF\u7D20\u3001ROI \u6216\u88C1\u526A\u53C2\u6570\u3002",
+        )
 
         self.cancel_btn = ttk.Button(
             ctrl_frame, text="\u53D6\u6D88",

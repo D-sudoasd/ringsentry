@@ -1,13 +1,55 @@
 """Worker function for threaded batch processing."""
 
-import threading
 from pathlib import Path
 
+import numpy as np
+
+from .quality import analyze_image_quality, quality_summary_line
 from .processing import processing_is_identity
 from .loader import load_image_with_info
 from .processing import apply_processing
 from .writer import save_array
 from .utils import get_output_base_name, summarize_array_stats
+
+
+def _processing_risk_logs(file_name: str, arr, proc_opts: dict) -> list:
+    """Generate GUI-visible warnings for operations that may change data meaning."""
+    logs = []
+    h, w = arr.shape
+    roi = proc_opts.get("roi")
+    if roi is not None:
+        _, _, roi_w, roi_h = [int(v) for v in roi]
+        h, w = roi_h, roi_w
+
+    if str(proc_opts.get("rotate_deg", "0")) in ("90", "270"):
+        h, w = w, h
+
+    bin_factor = int(proc_opts.get("bin_factor", 1) or 1)
+    if bin_factor > 1 and ((h % bin_factor) != 0 or (w % bin_factor) != 0):
+        h2 = (h // bin_factor) * bin_factor
+        w2 = (w // bin_factor) * bin_factor
+        logs.append(
+            f"WARNING: {file_name} binning={bin_factor} will crop "
+            f"{h - h2} rows and {w - w2} cols before averaging"
+        )
+
+    mask = proc_opts.get("mask_frame")
+    if mask is not None:
+        mask_arr = np.asarray(mask)
+        if roi is not None and mask_arr.ndim == 2:
+            x, y, roi_w, roi_h = [int(v) for v in roi]
+            mask_arr = mask_arr[y:y + roi_h, x:x + roi_w]
+        invalid = (
+            (mask_arr != 0)
+            if proc_opts.get("mask_nonzero_is_invalid", True)
+            else (mask_arr == 0)
+        )
+        logs.append(
+            f"INFO: {file_name} mask marks "
+            f"{int(np.count_nonzero(invalid))} pixels as invalid"
+        )
+
+    return logs
 
 
 def process_one_file(args):
@@ -30,6 +72,29 @@ def process_one_file(args):
         loaded = load_image_with_info(file_path, h5_path)
         arr = loaded["data"]
         source_meta = loaded["metadata"]
+        quality_report = analyze_image_quality(
+            arr,
+            metadata=source_meta,
+            source_name=file_path.name,
+        )
+        logs.append(quality_summary_line(quality_report))
+        for finding in quality_report.findings:
+            if finding.level in {"WARNING", "ERROR"}:
+                logs.append(
+                    f"{finding.level}: {file_path.name} QC {finding.message} "
+                    f"({finding.basis})"
+                )
+        for suggestion in quality_report.suggestions:
+            logs.append(
+                f"SUGGESTION: {file_path.name} {suggestion.action} "
+                f"Basis: {suggestion.reason}"
+            )
+        if quality_report.review_required:
+            logs.append(
+                f"REVIEW: {file_path.name} has QC warnings; "
+                "please inspect this file in the run report."
+            )
+        logs.extend(_processing_risk_logs(file_path.name, arr, proc_opts))
         processed_arr = apply_processing(
             arr,
             dark_frame=proc_opts.get("dark_frame"),
@@ -119,9 +184,10 @@ def process_one_file(args):
                     out_path.unlink()
             elif success:
                 mode = "RAW" if preserve_dtype else "PROC"
+                detail = f"; {msg}" if msg and msg != "OK" else ""
                 logs.append(
                     f"SUCCESS: {file_path.name} [{fmt}/{mode}] -> "
-                    f"{out_path} ({points} points)"
+                    f"{out_path} ({points} points{detail})"
                 )
             else:
                 logs.append(f"FAILED: {file_path.name} [{fmt}] -> {msg}")
