@@ -57,12 +57,19 @@ def process_one_file(args):
 
     Args is a tuple of:
         (file_path, rel_path, root, outroot, formats,
-         xy_opts, h5_path, proc_opts, cancellation_event, overwrite)
+         xy_opts, png_opts, h5_path, proc_opts, cancellation_event, overwrite)
     """
-    (
-        file_path, rel_path, root, outroot, formats,
-        xy_opts, h5_path, proc_opts, cancellation_event, overwrite
-    ) = args
+    if len(args) == 10:
+        (
+            file_path, rel_path, root, outroot, formats,
+            xy_opts, h5_path, proc_opts, cancellation_event, overwrite
+        ) = args
+        png_opts = {}
+    else:
+        (
+            file_path, rel_path, root, outroot, formats,
+            xy_opts, png_opts, h5_path, proc_opts, cancellation_event, overwrite
+        ) = args
     logs = []
 
     if cancellation_event.is_set():
@@ -176,6 +183,7 @@ def process_one_file(args):
                 cancellation_event=cancellation_event,
                 preserve_dtype=preserve_dtype,
                 metadata=export_meta,
+                png_options=png_opts,
             )
 
             if cancellation_event.is_set():

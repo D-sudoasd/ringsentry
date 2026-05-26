@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from .edf_io import write_edf
+from .png_export import save_png
 
 
 logger = logging.getLogger(__name__)
@@ -301,6 +302,7 @@ def save_array(
     cancellation_event: threading.Event = None,
     preserve_dtype: bool = True,
     metadata: Optional[Dict[str, Any]] = None,
+    png_options: Optional[Dict[str, Any]] = None,
 ) -> tuple:
     """Dispatcher for all output types.
 
@@ -308,6 +310,9 @@ def save_array(
         (success: bool, message: str, point_count: int)
     """
     try:
+        if fmt == 'png':
+            msg = save_png(arr, out_path, png_options or {})
+            return (True, msg, arr.size)
         if fmt in ('edf', 'tif', 'npy', 'dat', 'csv'):
             msg = _save_matrix(
                 arr, out_path, fmt,

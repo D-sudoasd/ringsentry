@@ -10,6 +10,7 @@
     "edf": false,
     "tif": false,
     "npy": false,
+    "png": false,
     "dat": false,
     "csv": false,
     "xycsv": true,
@@ -21,6 +22,12 @@
     "skip_zeros": true,
     "zero_tol": 0.0,
     "y_axis_origin": "top-left"
+  },
+  "png_options": {
+    "scale": "linear",
+    "vmin": "",
+    "vmax": "",
+    "colormap": "viridis"
   },
   "overwrite": false,
   "lossless_matrix": true,

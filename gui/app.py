@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import math
 import threading
 import concurrent.futures
 from pathlib import Path
@@ -36,6 +37,7 @@ from core.quality import (
     quality_summary_line,
 )
 from core.worker import process_one_file
+from core.png_export import validate_png_options
 
 
 class App(tk.Tk):
@@ -59,6 +61,7 @@ class App(tk.Tk):
         self.mask_frame = None
         self.cancellation_event = threading.Event()
         self.thread_pool = None
+        self.is_running = False
         self.done_count = 0
         self.count_lock = threading.Lock()
         self.stats = {
@@ -503,9 +506,16 @@ class App(tk.Tk):
             self.geometry_tab.norm_cb.config(state='readonly')
             self.geometry_tab.transform_cb.config(state='readonly')
             self.output_tab.xy_y_axis_origin_cb.config(state='readonly')
+            self.output_tab.png_scale_cb.config(state='readonly')
 
     # --- Conversion ---
     def run_conversion(self):
+        if self.is_running:
+            return messagebox.showwarning(
+                "正在运行",
+                "当前批处理尚未结束，请等待完成或先取消当前任务。",
+            )
+
         # Apply workflow preset if selected
         preset = self.io_tab.workflow_preset_var.get()
         if preset != "Custom":
@@ -538,7 +548,14 @@ class App(tk.Tk):
         outroot = self.io_tab.outdir_var.get().strip()
         if not outroot:
             outroot = self._get_default_output_root()
-        Path(outroot).mkdir(parents=True, exist_ok=True)
+        try:
+            Path(outroot).mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            self.log(f"输出目录不可用: {outroot} ({e})")
+            return messagebox.showerror(
+                "输出目录不可用",
+                f"无法创建或访问输出目录:\n{outroot}\n\n{e}",
+            )
         self.io_tab.outdir_var.set(outroot)
 
         formats = [
@@ -550,11 +567,20 @@ class App(tk.Tk):
             )
 
         try:
+            max_workers = int(self.log_panel.max_thr_var.get())
+            if max_workers < 1 or max_workers > 64:
+                raise ValueError("线程数必须在 1-64 之间")
             roi = parse_roi_text(self.processing_tab.roi_var.get())
             min_i = parse_optional_float(self.processing_tab.min_intensity_var.get())
             max_i = parse_optional_float(self.processing_tab.max_intensity_var.get())
             pclip_low = parse_optional_float(self.geometry_tab.pclip_low_var.get())
             pclip_high = parse_optional_float(self.geometry_tab.pclip_high_var.get())
+            try:
+                xy_zero_tol = float(self.output_tab.xy_zero_tol.get())
+            except Exception as exc:
+                raise ValueError("零值容差必须是 >= 0 的有限数值") from exc
+            if not math.isfinite(xy_zero_tol) or xy_zero_tol < 0:
+                raise ValueError("零值容差必须是 >= 0 的有限数值")
             if pclip_low is not None and not (0.0 <= pclip_low <= 100.0):
                 raise ValueError("\u767E\u5206\u4F4D\u4E0B\u9650\u5FC5\u987B\u5728 [0,100]")
             if pclip_high is not None and not (0.0 <= pclip_high <= 100.0):
@@ -577,6 +603,14 @@ class App(tk.Tk):
                 raise ValueError("\u70ED\u50CF\u7D20\u7A97\u53E3\u5FC5\u987B >= 3")
             if hot_sigma <= 0:
                 raise ValueError("\u70ED\u50CF\u7D20\u4FE1\u53F7\u5F3A\u5EA6\u5FC5\u987B > 0")
+            png_opts = {
+                "scale": self.output_tab.png_scale_var.get(),
+                "vmin": self.output_tab.png_min_var.get(),
+                "vmax": self.output_tab.png_max_var.get(),
+                "colormap": self.output_tab.png_colormap_var.get(),
+            }
+            if "png" in formats:
+                png_opts = validate_png_options(png_opts)
         except Exception as e:
             return messagebox.showerror(
                 "\u8BBE\u7F6E\u65E0\u6548", f"\u5904\u7406\u8BBE\u7F6E\u9519\u8BEF: {e}"
@@ -586,7 +620,7 @@ class App(tk.Tk):
             "header": self.output_tab.xy_header.get(),
             "one_based": self.output_tab.xy_one_based.get(),
             "skip_zeros": self.output_tab.xy_skip_zeros.get(),
-            "zero_tol": self.output_tab.xy_zero_tol.get(),
+            "zero_tol": xy_zero_tol,
             "y_axis_origin": self.output_tab.xy_y_axis_origin_var.get(),
         }
         proc_opts = {
@@ -625,13 +659,14 @@ class App(tk.Tk):
         args_list = [
             (
                 fp, rp, root, outroot, formats,
-                xy_opts, self.io_tab.h5_path_var.get(), proc_opts,
+                xy_opts, png_opts, self.io_tab.h5_path_var.get(), proc_opts,
                 self.cancellation_event, self.output_tab.overwrite_var.get(),
             )
             for fp, rp in self.filelist
         ]
 
         self.cancellation_event.clear()
+        self.is_running = True
         self._set_ui_state(running=True)
         self.log_panel.prog['maximum'] = len(self.filelist)
         self.log_panel.prog['value'] = 0
@@ -639,7 +674,7 @@ class App(tk.Tk):
         self.log_panel.run_log_lines = []
         self.log(
             f"--- \u5F00\u59CB\u8F6C\u6362 {len(self.filelist)} \u4E2A\u6587\u4EF6 | "
-            f"\u7EBF\u7A0B={self.log_panel.max_thr_var.get()} | "
+            f"\u7EBF\u7A0B={max_workers} | "
             f"\u683C\u5F0F={','.join(formats)} ---"
         )
 
@@ -687,41 +722,55 @@ class App(tk.Tk):
             )
 
             # Update title with progress
-            progress_pct = (self.done_count / len(self.filelist)) * 100
+            progress_pct = (self.done_count / len(args_list)) * 100
             self.title(
-                f"{APP_TITLE} {APP_VERSION} - {self.done_count}/{len(self.filelist)} "
+                f"{APP_TITLE} {APP_VERSION} - {self.done_count}/{len(args_list)} "
                 f"({progress_pct:.1f}%)"
             )
 
         def main_thread_func():
-            max_workers = self.log_panel.max_thr_var.get()
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_workers
-            ) as executor:
-                self.thread_pool = executor
-                futures = [
-                    executor.submit(process_one_file, args)
-                    for args in args_list
-                ]
-                for fut in concurrent.futures.as_completed(futures):
-                    if fut.cancelled():
-                        self.after(
-                            0,
-                            lambda: on_done_threadsafe(
-                                ["CANCELLED: future cancelled"]
-                            ),
-                        )
-                        continue
-                    try:
-                        logs = fut.result()
-                    except Exception as e:
-                        logs = [f"FAILED: worker exception -> {e}"]
-                    self.after(0, lambda logs=logs: on_done_threadsafe(logs))
+            try:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=max_workers
+                ) as executor:
+                    self.thread_pool = executor
+                    futures = [
+                        executor.submit(process_one_file, args)
+                        for args in args_list
+                    ]
+                    for fut in concurrent.futures.as_completed(futures):
+                        if fut.cancelled():
+                            self.after(
+                                0,
+                                lambda: on_done_threadsafe(
+                                    ["CANCELLED: future cancelled"]
+                                ),
+                            )
+                            continue
+                        try:
+                            logs = fut.result()
+                        except Exception as e:
+                            logs = [f"FAILED: worker exception -> {e}"]
+                        self.after(0, lambda logs=logs: on_done_threadsafe(logs))
+            except Exception as e:
+                self.thread_pool = None
+                self.after(0, lambda e=e: self._handle_worker_thread_error(e))
+                return
 
             self.thread_pool = None
             self.after(0, lambda: self._finalize_run(outroot))
 
         threading.Thread(target=main_thread_func, daemon=True).start()
+
+    def _handle_worker_thread_error(self, exc):
+        self.log(f"批处理线程异常: {exc}")
+        self.is_running = False
+        self._set_ui_state(running=False)
+        self.title(f"{APP_TITLE} {APP_VERSION}")
+        messagebox.showerror(
+            "批处理异常",
+            f"批处理线程发生未处理异常，任务已停止:\n{exc}",
+        )
 
     def _finalize_run(self, outroot):
         elapsed = (
@@ -735,6 +784,7 @@ class App(tk.Tk):
             self.log("--- \u8F6C\u6362\u5B8C\u6210 ---")
 
         self._set_ui_state(running=False)
+        self.is_running = False
         self.log_panel.update_stats_display(
             self.stats, self.done_count, len(self.filelist), self.start_time
         )
@@ -804,6 +854,14 @@ class App(tk.Tk):
             f"Input Count: {len(self.filelist)}",
             f"Output: {outroot}",
             f"Formats: {', '.join(formats)}",
+            (
+                "PNG Display: "
+                f"scale={self.output_tab.png_scale_var.get()}, "
+                f"I Min/I Max={self.output_tab.png_min_var.get()} / "
+                f"{self.output_tab.png_max_var.get()}, "
+                f"colormap={self.output_tab.png_colormap_var.get()}"
+                if "png" in formats else "PNG Display: <not selected>"
+            ),
             f"Elapsed: {elapsed}",
             f"Success: {self.stats['success']}",
             f"Failed: {self.stats['failed']}",
@@ -871,6 +929,8 @@ class App(tk.Tk):
 
     def cancel_conversion(self):
         """Cancel the ongoing conversion."""
+        if not self.is_running and not self.thread_pool:
+            return
         self.log("!!! \u8BF7\u6C42\u53D6\u6D88\uFF0C\u6B63\u5728\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210... !!!")
         self.cancellation_event.set()
         self.log_panel.cancel_btn.config(state="disabled")
@@ -927,6 +987,11 @@ class App(tk.Tk):
             o.xy_y_axis_origin_var.set(
                 config.get('xy_options', {}).get('y_axis_origin', 'top-left')
             )
+            png_options = config.get('png_options', {})
+            o.png_scale_var.set(png_options.get('scale', 'linear'))
+            o.png_min_var.set(png_options.get('vmin', ''))
+            o.png_max_var.set(png_options.get('vmax', ''))
+            o.png_colormap_var.set(png_options.get('colormap', 'viridis'))
             o.overwrite_var.set(config.get('overwrite', False))
             o.lossless_matrix_var.set(config.get('lossless_matrix', True))
 
@@ -1009,6 +1074,22 @@ class App(tk.Tk):
             self.log(f"\u65E0\u6CD5\u52A0\u8F7D\u914D\u7F6E: {e}")
 
     def _save_config(self):
+        try:
+            self._save_config_impl()
+        except Exception as e:
+            try:
+                self.log(f"保存配置错误: {e}")
+            except Exception:
+                print(f"保存配置错误: {e}")
+            try:
+                messagebox.showerror(
+                    "保存配置失败",
+                    f"无法保存 config.json。\n\n{e}",
+                )
+            except Exception:
+                pass
+
+    def _save_config_impl(self):
         io = self.io_tab
         p = self.processing_tab
         o = self.output_tab
@@ -1042,6 +1123,12 @@ class App(tk.Tk):
                 'zero_tol': o.xy_zero_tol.get(),
                 'y_axis_origin': o.xy_y_axis_origin_var.get(),
             },
+            'png_options': {
+                'scale': o.png_scale_var.get(),
+                'vmin': o.png_min_var.get(),
+                'vmax': o.png_max_var.get(),
+                'colormap': o.png_colormap_var.get(),
+            },
             'overwrite': o.overwrite_var.get(),
             'lossless_matrix': o.lossless_matrix_var.get(),
             'workflow_preset': io.workflow_preset_var.get(),
@@ -1073,7 +1160,7 @@ class App(tk.Tk):
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            print(f"\u4FDD\u5B58\u914D\u7F6E\u9519\u8BEF: {e}")
+            raise RuntimeError(f"保存配置错误: {e}") from e
 
     def _load_config_raw(self) -> dict:
         """Read config.json and return the raw dict (for Q-calculator custom presets)."""

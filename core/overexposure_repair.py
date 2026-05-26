@@ -972,7 +972,12 @@ code {{ background: #f5f5f5; padding: 1px 4px; border-radius: 4px; }}
     return path
 
 
-def run_batch(cfg: ProcessConfig, action: str = "repair", progress_callback: Optional[Callable[[int, int, FileResult], None]] = None) -> tuple[list[FileResult], BatchSummary]:
+def run_batch(
+    cfg: ProcessConfig,
+    action: str = "repair",
+    progress_callback: Optional[Callable[[int, int, FileResult], None]] = None,
+    cancel_event=None,
+) -> tuple[list[FileResult], BatchSummary]:
     cfg = cfg.normalized()
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     files = iter_cbf_files(cfg.input_dir, cfg.output_dir, cfg.recursive, cfg.skip_output_dir)
@@ -983,20 +988,33 @@ def run_batch(cfg: ProcessConfig, action: str = "repair", progress_callback: Opt
 
     if cfg.workers <= 1 or total <= 1:
         for i, src in enumerate(files, 1):
+            if cancel_event is not None and cancel_event.is_set():
+                break
             r = func(src, cfg)
             results.append(r)
             if progress_callback:
                 progress_callback(i, total, r)
+            if cancel_event is not None and cancel_event.is_set():
+                break
     else:
         done = 0
         with ThreadPoolExecutor(max_workers=cfg.workers) as ex:
-            future_to_src = {ex.submit(func, src, cfg): src for src in files}
+            future_to_src = {}
+            for src in files:
+                if cancel_event is not None and cancel_event.is_set():
+                    break
+                future_to_src[ex.submit(func, src, cfg)] = src
             for fut in as_completed(future_to_src):
                 r = fut.result()
                 results.append(r)
                 done += 1
                 if progress_callback:
                     progress_callback(done, total, r)
+                if cancel_event is not None and cancel_event.is_set():
+                    for pending in future_to_src:
+                        if not pending.done():
+                            pending.cancel()
+                    break
         results.sort(key=lambda r: r.relative_path)
 
     prefix = "cbf_zero2sat_scan" if action == "scan" else ("cbf_zero2sat_dryrun" if cfg.dry_run else "cbf_zero2sat_repair")

@@ -127,6 +127,7 @@ python tools/q_calculator_standalone.py
 |--------|-----------|----------|
 | EDF | `.edf` | 同步辐射常用矩阵格式；保留 dtype、维度、字节序等元数据 |
 | TIFF | `.tif` | 通用查看和 ImageJ/Fiji 兼容；CBF int32 会按兼容 dtype 写出并在日志提示 |
+| PNG | `.png` | 固定强度范围的 8-bit RGB 显示图；用于批量快速查看衍射环，不作为定量矩阵数据 |
 | NPY | `.npy` | Python/NumPy 原生格式，最适合精确保留矩阵 |
 | CSV matrix | `.csv` | 纯文本二维矩阵，文件较大 |
 | DAT matrix | `.dat` | 制表符分隔二维矩阵 |

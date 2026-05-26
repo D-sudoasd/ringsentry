@@ -55,6 +55,7 @@ class OverexposureRepairTab(ttk.Frame):
         self.queue = queue.Queue()
         self.worker: Optional[threading.Thread] = None
         self.cancel_requested = False
+        self.cancel_event = threading.Event()
         self.last_output_dir: Optional[Path] = None
         self.last_html_report: Optional[str] = None
         self.last_csv: Optional[str] = None
@@ -372,6 +373,26 @@ class OverexposureRepairTab(ttk.Frame):
         if path:
             self.output_dir.set(path)
 
+    @staticmethod
+    def _parse_int_field(
+        raw_value: str,
+        label: str,
+        minimum: Optional[int] = None,
+        maximum: Optional[int] = None,
+    ) -> int:
+        text = str(raw_value).strip()
+        if text == "":
+            raise ValueError(f"{label} 不能为空，必须输入整数。")
+        try:
+            value = int(text)
+        except Exception as exc:
+            raise ValueError(f"{label} 必须是整数，当前输入: {text!r}") from exc
+        if minimum is not None and value < minimum:
+            raise ValueError(f"{label} 必须 >= {minimum}，当前输入: {value}")
+        if maximum is not None and value > maximum:
+            raise ValueError(f"{label} 必须 <= {maximum}，当前输入: {value}")
+        return value
+
     def build_config(self):
         if IMPORT_ERROR is not None:
             raise RuntimeError(f"过曝修复依赖不可用: {IMPORT_ERROR}")
@@ -397,14 +418,20 @@ class OverexposureRepairTab(ttk.Frame):
             backup_before_overwrite=self.backup_before_overwrite.get(),
             copy_unmodified=self.copy_unmodified.get(),
             mode=self.mode.get(),
-            zero_value=int(self.zero_value.get().strip()),
-            replacement_value=int(self.replacement_value.get().strip()),
-            bright_threshold=int(self.bright_threshold.get().strip()),
-            radius=int(self.radius.get().strip()),
+            zero_value=self._parse_int_field(self.zero_value.get(), "异常值"),
+            replacement_value=self._parse_int_field(
+                self.replacement_value.get(), "替换值"
+            ),
+            bright_threshold=self._parse_int_field(
+                self.bright_threshold.get(), "强峰阈值"
+            ),
+            radius=self._parse_int_field(self.radius.get(), "邻域半径/像素", minimum=1),
             verify_after_write=self.verify_after_write.get(),
             compute_sha256=self.compute_sha256.get(),
             generate_html_report=self.generate_html_report.get(),
-            workers=int(self.workers.get().strip()),
+            workers=self._parse_int_field(
+                self.workers.get(), "并行 worker 数", minimum=1, maximum=32
+            ),
             dry_run=self.dry_run.get(),
             metadata=meta,
         ).normalized()
@@ -463,9 +490,12 @@ class OverexposureRepairTab(ttk.Frame):
         )
         if not path:
             return
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(config_to_dict(cfg), f, indent=2, ensure_ascii=False)
-        self.log(f"配置已保存: {path}")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(config_to_dict(cfg), f, indent=2, ensure_ascii=False)
+            self.log(f"配置已保存: {path}")
+        except Exception as exc:
+            messagebox.showerror("保存失败", str(exc))
 
     def load_config(self):
         path = filedialog.askopenfilename(filetypes=[("JSON", "*.json")], title="加载配置")
@@ -509,6 +539,7 @@ class OverexposureRepairTab(ttk.Frame):
             if not ok:
                 return
         self.cancel_requested = False
+        self.cancel_event.clear()
         self.last_output_dir = cfg.output_dir
         self.last_html_report = None
         self.last_csv = None
@@ -527,6 +558,7 @@ class OverexposureRepairTab(ttk.Frame):
 
     def stop(self):
         self.cancel_requested = True
+        self.cancel_event.set()
         self.status.set("已请求停止。当前批处理会等待正在运行的文件写入安全结束。")
         self.log("停止请求已记录：为避免写坏 CBF，正在运行的文件写入不会被强制中断。")
 
@@ -535,7 +567,12 @@ class OverexposureRepairTab(ttk.Frame):
             def progress(i, total, result):
                 self.queue.put(("progress", (i, total, result)))
 
-            results, summary = run_batch(cfg, action=action, progress_callback=progress)
+            results, summary = run_batch(
+                cfg,
+                action=action,
+                progress_callback=progress,
+                cancel_event=self.cancel_event,
+            )
             self.queue.put(("done", (results, summary)))
         except Exception as exc:
             self.queue.put(("error", f"{exc}\n{traceback.format_exc()}"))

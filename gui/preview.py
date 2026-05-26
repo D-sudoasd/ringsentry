@@ -7,6 +7,7 @@ import numpy as np
 
 from core.loader import load_image, _lazy_import_matplotlib
 from core.processing import apply_processing
+from core.png_export import array_to_png_rgb, validate_png_options
 from core.utils import parse_roi_text, parse_optional_float, summarize_array_stats
 
 
@@ -33,6 +34,19 @@ def _sample_line_profile(img, x0, y0, x1, y1):
 
     distances = np.linspace(0, np.hypot(x1 - x0, y1 - y0), n_samples)
     return distances, profile
+
+
+def _roi_from_drag_points(start, end):
+    """Convert two image-space drag points to a top-left-origin ROI tuple."""
+    x1, y1 = start
+    x2, y2 = end
+    x = int(min(x1, x2))
+    y = int(min(y1, y2))
+    w_roi = int(abs(x2 - x1))
+    h_roi = int(abs(y2 - y1))
+    if w_roi <= 1 or h_roi <= 1:
+        return None
+    return x, y, w_roi, h_roi
 
 
 def show_preview(app):
@@ -127,11 +141,36 @@ def show_preview(app):
         win.title(f"\u9884\u89C8: {first_file.name}")
         win.geometry("1400x700")
 
-        preview_origin = (
-            'upper'
-            if app.output_tab.xy_y_axis_origin_var.get() == 'top-left'
-            else 'lower'
-        )
+        # ROI coordinates are part of the processing pipeline and always use
+        # array coordinates: x=column, y=row, origin=top-left.  The XY export
+        # y-origin option only affects exported coordinates, not ROI picking.
+        preview_origin = 'upper'
+        png_display_img = None
+        png_title_suffix = ""
+        try:
+            png_enabled = app.output_tab.format_vars.get('png').get()
+        except Exception:
+            png_enabled = False
+        if png_enabled:
+            try:
+                png_opts = validate_png_options(
+                    {
+                        "scale": app.output_tab.png_scale_var.get(),
+                        "vmin": app.output_tab.png_min_var.get(),
+                        "vmax": app.output_tab.png_max_var.get(),
+                        "colormap": app.output_tab.png_colormap_var.get(),
+                    }
+                )
+                png_display_img = array_to_png_rgb(
+                    display_img,
+                    vmin=png_opts["vmin"],
+                    vmax=png_opts["vmax"],
+                    scale=png_opts["scale"],
+                    colormap=png_opts["colormap"],
+                )
+                png_title_suffix = f" [PNG {png_opts['scale']}]"
+            except Exception as e:
+                app.log(f"PNG \u9884\u89C8\u8BBE\u7F6E\u65E0\u6548\uFF0C\u4F7F\u7528\u9ED8\u8BA4\u5F3A\u5EA6\u663E\u793A: {e}")
 
         # --- Control toolbar ---
         control_frame = ttk.Frame(win)
@@ -156,7 +195,7 @@ def show_preview(app):
         ).pack(side="left", padx=5)
 
         mode_hint = tk.StringVar(
-            value="\u62D6\u52A8\u9009\u62E9 ROI"
+            value="\u62D6\u52A8\u9009\u62E9 ROI\uFF08\u5DE6\u4E0A\u539F\u70B9\uFF09"
         )
         ttk.Label(
             control_frame, textvariable=mode_hint,
@@ -183,12 +222,24 @@ def show_preview(app):
         # --- Interaction state ---
         current_rect = [None]
         roi_data = {'start': None}
+        roi_target_ax = [None]
+        line_image_axes = []
         line_points = []
         line_artists = []
+
+        def _imshow_processed(ax):
+            if png_display_img is not None:
+                return ax.imshow(png_display_img, origin=preview_origin), False
+            return (
+                ax.imshow(display_img, cmap='viridis', origin=preview_origin),
+                True,
+            )
 
         def update_view():
             fig.clear()
             current_rect[0] = None
+            roi_target_ax[0] = None
+            line_image_axes.clear()
             mode = view_mode.get()
             line_points.clear()
             for a in line_artists:
@@ -200,11 +251,11 @@ def show_preview(app):
 
             if mode == "comparison":
                 mode_hint.set(
-                    "\u62D6\u52A8\u9009\u62E9 ROI (\u5728\u5904\u7406\u56FE\u50CF\u4E0A)"
+                    "\u5728\u5904\u7406\u56FE\u50CF\u4E0A\u62D6\u52A8\u9009\u62E9 ROI\uFF08\u5DE6\u4E0A\u539F\u70B9\uFF09"
                 )
                 _draw_comparison()
             elif mode == "single":
-                mode_hint.set("\u62D6\u52A8\u9009\u62E9 ROI")
+                mode_hint.set("\u62D6\u52A8\u9009\u62E9 ROI\uFF08\u5DE6\u4E0A\u539F\u70B9\uFF09")
                 _draw_single()
             elif mode == "line_profile":
                 mode_hint.set(
@@ -263,12 +314,15 @@ def show_preview(app):
             fig.colorbar(im_raw, ax=ax_raw, label='Intensity')
             ax_raw.set_title("\u539F\u59CB\u56FE\u50CF (Raw)")
 
-            im_proc = ax_proc.imshow(
-                display_img, cmap='viridis', origin=preview_origin
+            im_proc, show_colorbar = _imshow_processed(ax_proc)
+            if show_colorbar:
+                fig.colorbar(im_proc, ax=ax_proc, label='Intensity')
+            ax_proc.set_title(
+                "\u5904\u7406\u540E\u56FE\u50CF (ROI: \u5DE6\u4E0A\u539F\u70B9)"
+                + png_title_suffix
             )
-            fig.colorbar(im_proc, ax=ax_proc, label='Intensity')
-            ax_proc.set_title("\u5904\u7406\u540E\u56FE\u50CF (Processed)")
             _draw_roi_rect(ax_proc)
+            roi_target_ax[0] = ax_proc
 
             _draw_histogram_dual(ax_hist)
 
@@ -276,15 +330,15 @@ def show_preview(app):
             ax_img = fig.add_subplot(121)
             ax_hist = fig.add_subplot(122)
 
-            im = ax_img.imshow(
-                display_img, cmap='viridis', origin=preview_origin
-            )
-            fig.colorbar(im, ax=ax_img, label='Intensity')
+            im, show_colorbar = _imshow_processed(ax_img)
+            if show_colorbar:
+                fig.colorbar(im, ax=ax_img, label='Intensity')
             ax_img.set_title(
-                f"\u5904\u7406\u56FE\u50CF (ROI \u9009\u62E9, y-origin: "
-                f"{app.output_tab.xy_y_axis_origin_var.get()})"
+                "\u5904\u7406\u56FE\u50CF (ROI: \u5DE6\u4E0A\u539F\u70B9)"
+                + png_title_suffix
             )
             _draw_roi_rect(ax_img)
+            roi_target_ax[0] = ax_img
 
             finite = processed_img[np.isfinite(processed_img)]
             if finite.size > 0:
@@ -315,8 +369,9 @@ def show_preview(app):
             ax_raw.imshow(raw_img, cmap='viridis', origin=preview_origin)
             ax_raw.set_title("\u539F\u59CB\u56FE\u50CF (\u70B9\u51FB\u5B9A\u4E49\u7EBF\u6BB5)")
 
-            ax_proc.imshow(display_img, cmap='viridis', origin=preview_origin)
-            ax_proc.set_title("\u5904\u7406\u56FE\u50CF")
+            _imshow_processed(ax_proc)
+            ax_proc.set_title("\u5904\u7406\u56FE\u50CF" + png_title_suffix)
+            line_image_axes.extend([ax_raw, ax_proc])
 
             ax_profile.set_xlabel("\u50CF\u7D20\u8DDD\u79BB (Pixel Distance)")
             ax_profile.set_ylabel("\u5F3A\u5EA6 (Intensity)")
@@ -355,11 +410,11 @@ def show_preview(app):
             ax_raw.plot(x1, y1, 'ro', markersize=6)
             ax_raw.set_title("\u539F\u59CB\u56FE\u50CF + \u7EBF\u6BB5")
 
-            ax_proc.imshow(display_img, cmap='viridis', origin=preview_origin)
+            _imshow_processed(ax_proc)
             ax_proc.plot([x0, x1], [y0, y1], 'r-', linewidth=2)
             ax_proc.plot(x0, y0, 'ro', markersize=6)
             ax_proc.plot(x1, y1, 'ro', markersize=6)
-            ax_proc.set_title("\u5904\u7406\u56FE\u50CF + \u7EBF\u6BB5")
+            ax_proc.set_title("\u5904\u7406\u56FE\u50CF + \u7EBF\u6BB5" + png_title_suffix)
 
             ax_profile.plot(
                 dist_raw, prof_raw, alpha=0.7,
@@ -387,6 +442,8 @@ def show_preview(app):
             mode = view_mode.get()
 
             if mode == "line_profile":
+                if event.inaxes not in line_image_axes:
+                    return
                 line_points.append((event.xdata, event.ydata))
                 if len(line_points) == 1:
                     # Draw marker for first point
@@ -403,23 +460,24 @@ def show_preview(app):
                 return
 
             # ROI mode (comparison or single)
+            if event.inaxes is not roi_target_ax[0]:
+                return
             roi_data['start'] = (event.xdata, event.ydata)
 
         def on_mouse_release(event):
             if view_mode.get() == "line_profile":
                 return
-            if event.inaxes is None or roi_data['start'] is None:
+            if event.inaxes is not roi_target_ax[0] or roi_data['start'] is None:
                 return
             if event.xdata is None or event.ydata is None:
                 return
-            x1, y1 = roi_data['start']
-            x2, y2 = event.xdata, event.ydata
-            x = int(min(x1, x2))
-            y = int(min(y1, y2))
-            w_roi = int(abs(x2 - x1))
-            h_roi = int(abs(y2 - y1))
-            if w_roi <= 1 or h_roi <= 1:
+            roi_tuple = _roi_from_drag_points(
+                roi_data['start'], (event.xdata, event.ydata)
+            )
+            roi_data['start'] = None
+            if roi_tuple is None:
                 return
+            x, y, w_roi, h_roi = roi_tuple
 
             roi_str = f"{x},{y},{w_roi},{h_roi}"
             app.processing_tab.roi_var.set(roi_str)
@@ -430,7 +488,7 @@ def show_preview(app):
         def on_mouse_move(event):
             if view_mode.get() == "line_profile":
                 return
-            if roi_data['start'] is None or event.inaxes is None:
+            if roi_data['start'] is None or event.inaxes is not roi_target_ax[0]:
                 return
             if current_rect[0] is not None:
                 try:
@@ -451,11 +509,8 @@ def show_preview(app):
                 linewidth=2, edgecolor='g', facecolor='none',
                 linestyle=':',
             )
-            # Add to the last axes that was used
-            axes = fig.get_axes()
-            if axes:
-                axes[0].add_patch(current_rect[0])
-                canvas.draw()
+            roi_target_ax[0].add_patch(current_rect[0])
+            canvas.draw()
 
         canvas.mpl_connect('button_press_event', on_mouse_press)
         canvas.mpl_connect('button_release_event', on_mouse_release)

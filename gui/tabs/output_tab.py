@@ -27,6 +27,7 @@ class OutputTab(ttk.Frame):
             'edf': tk.BooleanVar(),
             'tif': tk.BooleanVar(),
             'npy': tk.BooleanVar(),
+            'png': tk.BooleanVar(),
             'dat': tk.BooleanVar(),
             'csv': tk.BooleanVar(),
             'xycsv': tk.BooleanVar(value=True),
@@ -44,6 +45,70 @@ class OutputTab(ttk.Frame):
             )
             cb.grid(row=i, column=0, sticky="w", pady=2)
             ToolTip(cb, FORMAT_DESCRIPTIONS.get(key, ""))
+
+        # --- Display PNG Export ---
+        png_frame = ttk.LabelFrame(self, text="PNG \u663E\u793A\u56FE", padding=10)
+        png_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        png_frame.columnconfigure(1, weight=1)
+        png_frame.columnconfigure(3, weight=1)
+
+        png_cb = ttk.Checkbutton(
+            png_frame,
+            text="PNG (\u6279\u91CF\u663E\u793A\u56FE)",
+            variable=self.format_vars['png'],
+        )
+        png_cb.grid(row=0, column=0, sticky="w", pady=2)
+        ToolTip(png_cb, FORMAT_DESCRIPTIONS.get('png', ""))
+
+        ttk.Label(png_frame, text="PNG Scale:").grid(
+            row=0, column=1, sticky="e", padx=(12, 5), pady=2
+        )
+        self.png_scale_var = tk.StringVar(value="linear")
+        self.png_scale_cb = ttk.Combobox(
+            png_frame,
+            values=["linear", "log"],
+            textvariable=self.png_scale_var,
+            state="readonly",
+            width=8,
+        )
+        self.png_scale_cb.grid(row=0, column=2, sticky="w", pady=2)
+        ToolTip(
+            self.png_scale_cb,
+            "PNG \u663E\u793A\u5F3A\u5EA6\u5F62\u5F0F:\n"
+            "- linear: \u7EBF\u6027\u6620\u5C04\u5230 0-255\n"
+            "- log: \u5728\u56FA\u5B9A\u8303\u56F4\u5185\u505A log10(1 + I - Imin) \u663E\u793A\u538B\u7F29",
+        )
+
+        ttk.Label(png_frame, text="PNG I Min:").grid(
+            row=1, column=0, sticky="w", pady=(6, 2)
+        )
+        self.png_min_var = tk.StringVar()
+        png_min_entry = ttk.Entry(png_frame, textvariable=self.png_min_var, width=12)
+        png_min_entry.grid(row=1, column=1, sticky="w", padx=(5, 12), pady=(6, 2))
+        ToolTip(
+            png_min_entry,
+            "\u5904\u7406\u540E\u5F3A\u5EA6\u7684 PNG \u663E\u793A\u4E0B\u9650\u3002"
+            "\u9009\u62E9 PNG \u65F6\u5FC5\u586B\uFF0C\u53EA\u5F71\u54CD PNG\u3002",
+        )
+
+        ttk.Label(png_frame, text="PNG I Max:").grid(
+            row=1, column=2, sticky="e", padx=(12, 5), pady=(6, 2)
+        )
+        self.png_max_var = tk.StringVar()
+        png_max_entry = ttk.Entry(png_frame, textvariable=self.png_max_var, width=12)
+        png_max_entry.grid(row=1, column=3, sticky="w", pady=(6, 2))
+        ToolTip(
+            png_max_entry,
+            "\u5904\u7406\u540E\u5F3A\u5EA6\u7684 PNG \u663E\u793A\u4E0A\u9650\u3002"
+            "\u540C\u4E00\u6279\u56FE\u5EFA\u8BAE\u4F7F\u7528\u56FA\u5B9A\u8303\u56F4\u4FBF\u4E8E\u6BD4\u8F83\u3002",
+        )
+
+        self.png_colormap_var = tk.StringVar(value="viridis")
+        ttk.Label(
+            png_frame,
+            text="Colormap: viridis",
+            foreground="gray",
+        ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(4, 0))
 
         # Text matrix formats
         text_frame = ttk.LabelFrame(self, text="\u6587\u672C\u77E9\u9635", padding=10)
@@ -134,7 +199,7 @@ class OutputTab(ttk.Frame):
 
         # --- General Options ---
         general_frame = ttk.LabelFrame(self, text="\u5E38\u89C4\u9009\u9879", padding=10)
-        general_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        general_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
         self.overwrite_var = tk.BooleanVar(value=False)
         cb_overwrite = ttk.Checkbutton(

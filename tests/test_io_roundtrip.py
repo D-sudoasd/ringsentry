@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 import tifffile
 
 from core.edf_io import read_edf, write_edf
@@ -259,6 +260,77 @@ class DetectorIORoundTripTests(unittest.TestCase):
             loaded = np.load(output_dir / "npy" / "input.npy")
             expected = np.array([[3.0, 5.0]], dtype=np.float32)
             self.assertTrue(np.array_equal(loaded, expected))
+
+    def test_worker_png_export_uses_processed_array_size_and_proc_mode(self):
+        arr = np.arange(16, dtype=np.uint16).reshape(4, 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            source = tmp / "sample.tif"
+            output_dir = tmp / "out"
+            tifffile.imwrite(source, arr)
+
+            xy_opts = {
+                "header": True,
+                "one_based": False,
+                "skip_zeros": False,
+                "zero_tol": 0.0,
+                "y_axis_origin": "top-left",
+            }
+            png_opts = {
+                "scale": "linear",
+                "vmin": "0",
+                "vmax": "15",
+                "colormap": "viridis",
+            }
+            proc_opts = {
+                "dark_frame": None,
+                "flat_frame": None,
+                "flat_is_dark_subtracted": True,
+                "roi": None,
+                "mask_frame": None,
+                "mask_nonzero_is_invalid": True,
+                "clip_negative": False,
+                "bg_offset": 0.0,
+                "min_intensity": None,
+                "max_intensity": None,
+                "rotate_deg": "0",
+                "flip_x": False,
+                "flip_y": False,
+                "bin_factor": 2,
+                "pclip_low": None,
+                "pclip_high": None,
+                "intensity_transform": "none",
+                "gamma": 1.0,
+                "norm_mode": "none",
+                "hot_pixel_enable": False,
+                "hot_pixel_window": 3,
+                "hot_pixel_sigma": 8.0,
+                "lossless_matrix": True,
+            }
+
+            logs = process_one_file(
+                (
+                    source,
+                    Path("sample.tif"),
+                    tmp,
+                    output_dir,
+                    ["png"],
+                    xy_opts,
+                    png_opts,
+                    "/entry/data/data",
+                    proc_opts,
+                    threading.Event(),
+                    True,
+                )
+            )
+
+            self.assertFalse(
+                [line for line in logs if line.startswith(("ERROR", "FAILED"))]
+            )
+            self.assertTrue(any("[png/PROC]" in line for line in logs), logs)
+            with Image.open(output_dir / "png" / "sample.png") as img:
+                self.assertEqual(img.mode, "RGB")
+                self.assertEqual(img.size, (2, 2))
 
 
 if __name__ == "__main__":

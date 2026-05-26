@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -111,6 +112,26 @@ class OverexposureRepairTests(unittest.TestCase):
 
         self.assertEqual(tab.IMPORT_ERROR, None)
         self.assertTrue(hasattr(tab, "OverexposureRepairTab"))
+
+    def test_run_batch_honors_cancel_event_before_processing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            data_dir = tmp / "input"
+            output_dir = tmp / "out"
+            data_dir.mkdir()
+            write_cbf(data_dir / "hot.cbf", np.array([[0, 1], [2, 3]], dtype=np.int32))
+
+            cancel_event = threading.Event()
+            cancel_event.set()
+
+            results, summary = repair.run_batch(
+                self.make_config(data_dir, output_dir),
+                action="scan",
+                cancel_event=cancel_event,
+            )
+
+            self.assertEqual(results, [])
+            self.assertEqual(summary.total_files, 0)
 
 
 if __name__ == "__main__":
