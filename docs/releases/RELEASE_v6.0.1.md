@@ -55,4 +55,4 @@ python tools/q_calculator_standalone.py
 
 ## Repository
 
-https://github.com/D-sudoasd/2d-image-processor
+https://github.com/D-sudoasd/ringsentry

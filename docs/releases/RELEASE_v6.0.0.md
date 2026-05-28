@@ -58,4 +58,4 @@ If you use this software in academic work, please cite the repository metadata i
 
 ## Repository
 
-https://github.com/D-sudoasd/2d-image-processor
+https://github.com/D-sudoasd/ringsentry

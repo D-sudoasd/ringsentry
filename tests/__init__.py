@@ -1,1 +1,1 @@
-"""Test package for 2D image processor."""
+"""Test package for RingSentry."""

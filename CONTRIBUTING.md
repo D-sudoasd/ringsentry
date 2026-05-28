@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for your interest in improving **2D Diffraction Ring Preprocessor**.
+Thank you for your interest in improving **RingSentry**.
 
 This repository is maintained as a research-oriented desktop application for 2D diffraction image preprocessing. Contributions are welcome, but they should prioritize reproducibility, correctness, and practical usability for scientific workflows.
 

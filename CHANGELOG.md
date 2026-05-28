@@ -1,6 +1,24 @@
 # Changelog / 更新日志
 
-All notable changes to the 2D Diffraction Ring Preprocessor.
+All notable changes to RingSentry.
+
+## [v7.0.0] - 2026-05-28
+
+### Changed
+
+- Renamed the project from **2D Diffraction Ring Preprocessor** to **RingSentry**.
+- Updated the project subtitle to **reproducible preprocessing and QC for 2D diffraction detector images**.
+- Updated package metadata, citation metadata, Zenodo metadata, repository links, and runtime software identifiers for the RingSentry brand.
+- Renamed Windows startup scripts to `START_RingSentry.cmd` and `双击启动_RingSentry.cmd`.
+- Added the `ringsentry` GUI entry point while retaining `2d-image-processor` for command-line compatibility.
+
+### DOI notes
+
+- The Zenodo concept DOI remains `10.5281/zenodo.19602728`.
+- The `v7.0.0` version DOI is pending until the GitHub release is archived by Zenodo.
+- The old `v6.0.1` version DOI `10.5281/zenodo.19602729` remains a historical release DOI and is not reused for `v7.0.0`.
+
+---
 2D 衍射环预处理工具的所有重要变更。
 
 ---

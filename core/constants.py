@@ -17,8 +17,8 @@ SUPPORTED_FORMATS = sorted(
 )
 NUMERIC_FRAME_SUFFIX_RE = re.compile(r'^\.\d{3,6}$')
 
-APP_TITLE = "2D\u8854\u5C04\u73AF\u9884\u5904\u7406\u5DE5\u5177"
-APP_VERSION = "v6.0.1"
+APP_TITLE = "RingSentry"
+APP_VERSION = "v7.0.0"
 CONFIG_FILE = "config.json"
 
 DEFAULT_H5_PATH = "/entry/data/data"

@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "2d-diffraction-ring-preprocessor"
-version = "6.0.1"
-description = "Desktop GUI toolkit for preprocessing 2D diffraction detector images."
+name = "ringsentry"
+version = "7.0.0"
+description = "Reproducible preprocessing and QC for 2D diffraction detector images."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
@@ -48,12 +48,14 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/D-sudoasd/2d-image-processor"
-Repository = "https://github.com/D-sudoasd/2d-image-processor"
-Issues = "https://github.com/D-sudoasd/2d-image-processor/issues"
+Homepage = "https://github.com/D-sudoasd/ringsentry"
+Repository = "https://github.com/D-sudoasd/ringsentry"
+Issues = "https://github.com/D-sudoasd/ringsentry/issues"
 DOI = "https://doi.org/10.5281/zenodo.19602728"
 
 [project.gui-scripts]
+ringsentry = "main:main"
+# Backward-compatible entry point for scripts created before the RingSentry rename.
 2d-image-processor = "main:main"
 
 [tool.setuptools]
@@ -68,4 +70,3 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py38"
-

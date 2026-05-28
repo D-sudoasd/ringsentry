@@ -1,8 +1,8 @@
 <div align="center">
 
-# 2D Diffraction Ring Preprocessor
+# RingSentry
 
-**Batch preprocessing toolkit for 2D diffraction detector images**
+**reproducible preprocessing and QC for 2D diffraction detector images**
 
 SAXS · WAXS · SXRD · GIWAXS
 
@@ -13,7 +13,7 @@ SAXS · WAXS · SXRD · GIWAXS
 
 </div>
 
-Desktop GUI software for batch preprocessing of 2D diffraction images from synchrotron and laboratory experiments. It focuses on safe detector-image cleanup before downstream analysis: multi-format I/O, dark/flat calibration, ROI/mask handling, geometry transforms, intensity processing, previews, reports, and Q conversion.
+RingSentry is desktop GUI software for reproducible preprocessing and quality control of 2D diffraction images from synchrotron and laboratory experiments. It focuses on safe detector-image cleanup before downstream analysis: multi-format I/O, dark/flat calibration, ROI/mask handling, geometry transforms, intensity processing, previews, reports, and Q conversion.
 
 本软件面向材料领域二维衍射图像预处理。核心目标是：在导出给后续积分、拟合或纹理分析之前，尽量避免静默的数据损坏，并把每一步处理参数留在日志和报告中，便于复现实验数据处理流程。
 
@@ -36,13 +36,13 @@ pip install -r requirements.txt
 Windows 新手推荐：在项目文件夹里直接双击：
 
 ```text
-双击启动_2D图像处理软件.cmd
+双击启动_RingSentry.cmd
 ```
 
 GitHub/英文环境也可以双击：
 
 ```text
-START_2D_Image_Processor.cmd
+START_RingSentry.cmd
 ```
 
 如果喜欢命令行，也可以运行：
@@ -51,8 +51,18 @@ START_2D_Image_Processor.cmd
 python main.py
 ```
 
-### 3. 启动独立 Q 计算器
+### 3. Command-line launcher
 
+Editable installs also provide the primary RingSentry launcher:
+
+```bash
+py -m pip install -e .
+ringsentry
+```
+
+The legacy `2d-image-processor` launcher is kept only for backward compatibility.
+
+### 4. Standalone Q calculator
 ```bash
 python tools/q_calculator_standalone.py
 ```
@@ -189,9 +199,9 @@ py -m pip check
 ## Repository Layout
 
 ```text
-2D_image_processor/
-├── START_2D_Image_Processor.cmd
-├── 双击启动_2D图像处理软件.cmd
+RingSentry/
+├── START_RingSentry.cmd
+├── 双击启动_RingSentry.cmd
 ├── main.py
 ├── README.md
 ├── pyproject.toml
@@ -220,25 +230,26 @@ Key modules:
 If you use this software in academic work, cite the repository metadata in [CITATION.cff](CITATION.cff).
 
 - Concept DOI: [`10.5281/zenodo.19602728`](https://doi.org/10.5281/zenodo.19602728)
-- Version DOI for release `v6.0.1`: [`10.5281/zenodo.19602729`](https://doi.org/10.5281/zenodo.19602729)
+- Version DOI for release `v7.0.0`: pending Zenodo archival after GitHub release.
+- Historical version DOI for release `v6.0.1`: [`10.5281/zenodo.19602729`](https://doi.org/10.5281/zenodo.19602729)
 
 Suggested BibTeX:
 
 ```bibtex
-@software{d_sudoasd_2d_diffraction_ring_preprocessor_2026,
+@software{gong_ringsentry_2026,
   author  = {Gong, Delun},
-  title   = {2D Diffraction Ring Preprocessor},
-  version = {6.0.1},
+  title   = {RingSentry},
+  version = {7.0.0},
   year    = {2026},
-  doi     = {10.5281/zenodo.19602729},
-  url     = {https://doi.org/10.5281/zenodo.19602729}
+  doi     = {10.5281/zenodo.19602728},
+  url     = {https://github.com/D-sudoasd/ringsentry}
 }
 ```
 
 ## Links
 
 - [Changelog](CHANGELOG.md)
-- [Release Notes](docs/releases/RELEASE_v6.0.1.md)
+- [Release Notes](docs/releases/RELEASE_v7.0.0.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Zenodo DOI Plan](docs/ZENODO_DOI_PLAN.md)

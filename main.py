@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-2D Diffraction Ring Preprocessor - Main Entry Point
-====================================================
+RingSentry - Main Entry Point
+=============================
 启动入口，运行: python main.py
 """
 

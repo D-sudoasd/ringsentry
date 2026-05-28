@@ -147,15 +147,18 @@ class GuiResilienceTests(unittest.TestCase):
                 app.destroy()
 
     def test_output_tab_has_png_options_default_off(self):
-        app = self._create_app()
-        try:
-            self.assertIn("png", app.output_tab.format_vars)
-            self.assertFalse(app.output_tab.format_vars["png"].get())
-            self.assertEqual(app.output_tab.png_scale_var.get(), "linear")
-            self.assertEqual(app.output_tab.png_min_var.get(), "")
-            self.assertEqual(app.output_tab.png_max_var.get(), "")
-        finally:
-            app.destroy()
+        with tempfile.TemporaryDirectory(prefix="gui_default_config_") as tmp:
+            config_path = str(Path(tmp) / "config.json")
+            with patch("gui.app.CONFIG_FILE", config_path):
+                app = self._create_app()
+                try:
+                    self.assertIn("png", app.output_tab.format_vars)
+                    self.assertFalse(app.output_tab.format_vars["png"].get())
+                    self.assertEqual(app.output_tab.png_scale_var.get(), "linear")
+                    self.assertEqual(app.output_tab.png_min_var.get(), "")
+                    self.assertEqual(app.output_tab.png_max_var.get(), "")
+                finally:
+                    app.destroy()
 
     def test_png_requires_fixed_display_range_before_conversion(self):
         with tempfile.TemporaryDirectory(prefix="gui_bad_png_range_") as tmp:

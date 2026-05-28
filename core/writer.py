@@ -139,7 +139,7 @@ def _write_tiff(
         arr, preserve_dtype, metadata
     )
     meta.setdefault("axes", "YX")
-    meta.setdefault("Software", "2D_image_processor")
+    meta.setdefault("Software", "RingSentry")
 
     if imagej:
         tf.imwrite(

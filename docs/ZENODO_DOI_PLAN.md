@@ -1,6 +1,6 @@
 # Zenodo DOI Plan
 
-This document describes the recommended workflow to publish **2D Diffraction Ring Preprocessor** on Zenodo and bind the software DOI as strongly as possible to the real researcher identity **Delun Gong**.
+This document describes the recommended workflow to publish **RingSentry** on Zenodo and bind the software DOI as strongly as possible to the real researcher identity **Delun Gong**.
 
 ## Short answer
 
@@ -55,8 +55,8 @@ Once your ORCID iD is available, add a root-level file named `.zenodo.json` like
 
 ```json
 {
-  "title": "2D Diffraction Ring Preprocessor",
-  "version": "6.0.1",
+  "title": "RingSentry",
+  "version": "7.0.0",
   "upload_type": "software",
   "access_right": "open",
   "license": "mit",
@@ -99,7 +99,7 @@ Use your real ORCID iD and real affiliation. Do not publish placeholder values.
    - ORCID
    - affiliation
    - release version
-4. Create a normal GitHub release for the next archival version, for example `v6.0.1` or later.
+4. Create a normal GitHub release for the next archival version, for example `v7.0.0` or later.
 
 ### After the GitHub release
 
@@ -142,7 +142,7 @@ The recommended next repository step is to keep `.zenodo.json` and `CITATION.cff
    - `CHANGELOG.md`
    - `CITATION.cff`
    - `.zenodo.json`
-4. Create a new GitHub release for the next archival version, for example `v6.0.1` or later.
+4. Create a new GitHub release for the next archival version, for example `v7.0.0` or later.
 5. Wait for Zenodo to archive it and mint the DOI.
 6. Verify in the Zenodo record that:
    - creator is `Delun Gong`
