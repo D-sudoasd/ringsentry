@@ -8,6 +8,7 @@ import numpy as np
 from core.loader import load_image, _lazy_import_matplotlib
 from core.processing import apply_processing
 from core.png_export import array_to_png_rgb, validate_png_options
+from core.plot_style import apply_matplotlib_style, style_figure_axes
 from core.utils import parse_roi_text, parse_optional_float, summarize_array_stats
 
 
@@ -62,6 +63,8 @@ def show_preview(app):
 
     try:
         Figure, FigureCanvasTkAgg = _lazy_import_matplotlib()
+        import matplotlib
+        apply_matplotlib_style(matplotlib, preset="raw_inspection")
         first_file = (
             app.filelist[0][0]
             if isinstance(app.filelist[0], tuple)
@@ -263,6 +266,7 @@ def show_preview(app):
                 )
                 _draw_line_profile_base()
 
+            style_figure_axes(fig, preset="raw_inspection")
             fig.tight_layout()
             canvas.draw()
 
@@ -430,6 +434,7 @@ def show_preview(app):
             ax_profile.legend(fontsize=8)
             ax_profile.grid(True, ls='--', alpha=0.4)
 
+            style_figure_axes(fig, preset="raw_inspection")
             fig.tight_layout()
             canvas.draw()
             line_points.clear()

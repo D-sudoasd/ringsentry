@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from core.png_export import array_to_png_rgb, normalize_png_array
+from core.png_export import array_to_png_rgb, normalize_png_array, validate_png_options
 from core.writer import save_array
 
 
@@ -60,6 +60,7 @@ class PngExportTests(unittest.TestCase):
                     "vmin": "0",
                     "vmax": "5",
                     "colormap": "viridis",
+                    "dpi": 600,
                 },
             )
 
@@ -68,6 +69,23 @@ class PngExportTests(unittest.TestCase):
             with Image.open(path) as img:
                 self.assertEqual(img.mode, "RGB")
                 self.assertEqual(img.size, (3, 2))
+                self.assertIn("dpi", img.info)
+
+    def test_invalid_png_colormap_and_dpi_raise_clear_errors(self):
+        arr = np.array([[1.0]], dtype=np.float32)
+
+        with self.assertRaisesRegex(ValueError, "colormap"):
+            array_to_png_rgb(arr, vmin=0.0, vmax=1.0, colormap="jet")
+        with self.assertRaisesRegex(ValueError, "dpi"):
+            validate_png_options(
+                {
+                    "scale": "linear",
+                    "vmin": "0",
+                    "vmax": "1",
+                    "colormap": "viridis",
+                    "dpi": 10,
+                }
+            )
 
 
 if __name__ == "__main__":

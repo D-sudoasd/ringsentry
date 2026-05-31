@@ -1,11 +1,11 @@
-"""Automatic QC tab.
+﻿"""Automatic QC tab.
 
-This panel gives conservative, explainable recommendations.  It does not
+This panel gives conservative, explainable recommendations. It does not
 change preprocessing parameters; users still decide whether to apply them.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk
 
 from core.loader import load_image_with_info
 from core.quality import (
@@ -15,6 +15,7 @@ from core.quality import (
     quality_summary_line,
 )
 from core.utils import parse_roi_text
+from gui.layout import ScrollableFrame
 from gui.tooltip import ToolTip
 
 
@@ -22,20 +23,23 @@ class QualityTab(ttk.Frame):
     """Automatic quality-control recommendations for input samples."""
 
     def __init__(self, parent, app):
-        super().__init__(parent, padding=15)
+        super().__init__(parent, padding=0)
         self.app = app
         self.sample_count_var = tk.IntVar(value=5)
         self._create_widgets()
 
     def _create_widgets(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        workflow = ttk.LabelFrame(
-            self,
-            text="新手工作流",
-            padding=10,
-        )
+        self.scrollable = ScrollableFrame(self, padding=15)
+        self.scrollable.grid(row=0, column=0, sticky="nsew")
+        self.body = self.scrollable.body
+        body = self.body
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(2, weight=1)
+
+        workflow = ttk.LabelFrame(body, text="新手工作流", padding=10)
         workflow.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         workflow.columnconfigure(0, weight=1)
         ttk.Label(
@@ -48,7 +52,7 @@ class QualityTab(ttk.Frame):
             foreground="#555555",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        controls = ttk.LabelFrame(self, text="自动质控推荐", padding=10)
+        controls = ttk.LabelFrame(body, text="自动质控推荐", padding=10)
         controls.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         controls.columnconfigure(4, weight=1)
 
@@ -84,7 +88,7 @@ class QualityTab(ttk.Frame):
             foreground="#555555",
         ).grid(row=0, column=3, columnspan=2, sticky="w")
 
-        result_frame = ttk.LabelFrame(self, text="质控结果", padding=5)
+        result_frame = ttk.LabelFrame(body, text="质控结果", padding=5)
         result_frame.grid(row=2, column=0, sticky="nsew")
         result_frame.columnconfigure(0, weight=1)
         result_frame.rowconfigure(0, weight=1)
@@ -124,7 +128,9 @@ class QualityTab(ttk.Frame):
         """Analyze multiple samples without changing user parameters."""
         self.app.count_files(show_dialog=False)
         if not self.app.filelist:
-            messagebox.showwarning("无文件", "请先选择输入文件夹或具体文件。")
+            messagebox.showwarning(
+                "无文件", "请先选择输入文件夹或具体文件。"
+            )
             return
 
         try:
@@ -158,9 +164,7 @@ class QualityTab(ttk.Frame):
                     metadata=loaded["metadata"],
                     source_name=file_path.name,
                 )
-                report.findings.extend(
-                    assess_processing_plan(report, **plan)
-                )
+                report.findings.extend(assess_processing_plan(report, **plan))
                 report.review_required = any(
                     item.level in {"WARNING", "ERROR"}
                     for item in report.findings
@@ -175,7 +179,7 @@ class QualityTab(ttk.Frame):
                 blocks.append("")
 
         if len(shape_to_files) > 1:
-            blocks.append("跨样本尺寸检查:")
+            blocks.append("跨样本尺寸检查")
             blocks.append(
                 "- [WARNING] 抽样文件尺寸不一致。批处理仍可逐文件运行，"
                 "但 dark/flat/mask 和 ROI 必须逐尺寸确认。"
@@ -194,5 +198,5 @@ class QualityTab(ttk.Frame):
         for report in reports:
             self.app.log(quality_summary_line(report))
         self.app.log(
-            f"自动质控完成: 抽样 {len(reports)} 个，需人工复核 {review_count} 个"
+            f"自动质控完成: 抽样 {len(reports)} 个，需要人工复核 {review_count} 个"
         )

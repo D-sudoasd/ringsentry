@@ -4,6 +4,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+from gui.layout import ScrollableFrame
 from gui.tooltip import ToolTip
 from core.loader import load_image
 
@@ -12,17 +13,24 @@ class ProcessingTab(ttk.Frame):
     """Preprocessing settings tab."""
 
     def __init__(self, parent, app):
-        super().__init__(parent, padding=15)
+        super().__init__(parent, padding=0)
         self.app = app
         self._create_widgets()
 
     def _create_widgets(self):
-        self.columnconfigure(1, weight=1)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.scrollable = ScrollableFrame(self, padding=15)
+        self.scrollable.grid(row=0, column=0, sticky="nsew")
+        self.body = self.scrollable.body
+        body = self.body
+        body.columnconfigure(1, weight=1)
 
         row = 0
 
         # --- Dark Frame ---
-        dark_frame = ttk.LabelFrame(self, text="\u6697\u5E27 (Dark Frame)", padding=10)
+        dark_frame = ttk.LabelFrame(body, text="\u6697\u5E27 (Dark Frame)", padding=10)
         dark_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         dark_frame.columnconfigure(0, weight=1)
 
@@ -39,22 +47,31 @@ class ProcessingTab(ttk.Frame):
         )
 
         dark_browse = ttk.Button(
-            dark_frame, text="\u6D4F\u89C8", command=self._select_dark_frame, width=8
+            dark_frame,
+            text="\u9009\u62E9\u6697\u5E27",
+            command=self._select_dark_frame,
+            width=10,
         )
         dark_browse.grid(row=0, column=1, padx=(0, 5))
         dark_clear = ttk.Button(
-            dark_frame, text="\u6E05\u7A7A", command=self._clear_dark_frame, width=6
+            dark_frame,
+            text="\u6E05\u7A7A\u6697\u5E27",
+            command=self._clear_dark_frame,
+            width=10,
         )
         dark_clear.grid(row=0, column=2, padx=(0, 5))
         dark_manage = ttk.Button(
-            dark_frame, text="\u7BA1\u7406", command=self._manage_dark_frames, width=6
+            dark_frame,
+            text="\u7BA1\u7406\u6697\u5E27",
+            command=self._manage_dark_frames,
+            width=10,
         )
         dark_manage.grid(row=0, column=3)
 
         row += 1
 
         # --- Flat Field ---
-        flat_frame_lf = ttk.LabelFrame(self, text="\u5E73\u573A (Flat Field)", padding=10)
+        flat_frame_lf = ttk.LabelFrame(body, text="\u5E73\u573A (Flat Field)", padding=10)
         flat_frame_lf.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         flat_frame_lf.columnconfigure(0, weight=1)
 
@@ -71,15 +88,24 @@ class ProcessingTab(ttk.Frame):
         )
 
         flat_browse = ttk.Button(
-            flat_frame_lf, text="\u6D4F\u89C8", command=self._select_flat_frame, width=8
+            flat_frame_lf,
+            text="\u9009\u62E9\u5E73\u573A",
+            command=self._select_flat_frame,
+            width=10,
         )
         flat_browse.grid(row=0, column=1, padx=(0, 5))
         flat_clear = ttk.Button(
-            flat_frame_lf, text="\u6E05\u7A7A", command=self._clear_flat_frame, width=6
+            flat_frame_lf,
+            text="\u6E05\u7A7A\u5E73\u573A",
+            command=self._clear_flat_frame,
+            width=10,
         )
         flat_clear.grid(row=0, column=2, padx=(0, 5))
         flat_manage = ttk.Button(
-            flat_frame_lf, text="\u7BA1\u7406", command=self._manage_flat_frames, width=6
+            flat_frame_lf,
+            text="\u7BA1\u7406\u5E73\u573A",
+            command=self._manage_flat_frames,
+            width=10,
         )
         flat_manage.grid(row=0, column=3)
 
@@ -99,7 +125,7 @@ class ProcessingTab(ttk.Frame):
         row += 1
 
         # --- Mask File ---
-        mask_frame = ttk.LabelFrame(self, text="\u63A9\u819C (Mask File)", padding=10)
+        mask_frame = ttk.LabelFrame(body, text="\u63A9\u819C (Mask File)", padding=10)
         mask_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         mask_frame.columnconfigure(0, weight=1)
 
@@ -117,18 +143,24 @@ class ProcessingTab(ttk.Frame):
         )
 
         mask_browse = ttk.Button(
-            mask_frame, text="\u6D4F\u89C8", command=self._select_mask_frame, width=8
+            mask_frame,
+            text="\u9009\u62E9\u63A9\u819C",
+            command=self._select_mask_frame,
+            width=10,
         )
         mask_browse.grid(row=0, column=1, padx=(0, 5))
         mask_clear = ttk.Button(
-            mask_frame, text="\u6E05\u7A7A", command=self._clear_mask_frame, width=6
+            mask_frame,
+            text="\u6E05\u7A7A\u63A9\u819C",
+            command=self._clear_mask_frame,
+            width=10,
         )
         mask_clear.grid(row=0, column=2)
 
         row += 1
 
         # --- ROI ---
-        roi_frame = ttk.LabelFrame(self, text="ROI \u88C1\u526A (X,Y,W,H)", padding=10)
+        roi_frame = ttk.LabelFrame(body, text="ROI \u88C1\u526A (X,Y,W,H)", padding=10)
         roi_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         roi_frame.columnconfigure(0, weight=1)
 
@@ -144,7 +176,10 @@ class ProcessingTab(ttk.Frame):
         )
 
         preview_btn = ttk.Button(
-            roi_frame, text="\u9884\u89C8\u56FE\u50CF", command=self.app.preview_image, width=10
+            roi_frame,
+            text="\u5355\u56FE\u9884\u89C8",
+            command=self.app.preview_image,
+            width=10,
         )
         preview_btn.grid(row=0, column=1, padx=(0, 5))
         ToolTip(preview_btn, "\u9884\u89C8\u5904\u7406\u524D\u540E\u6548\u679C\u5E76\u4EA4\u4E92\u9009\u62E9 ROI")
@@ -156,14 +191,17 @@ class ProcessingTab(ttk.Frame):
         ToolTip(gallery_btn, "\u6279\u91CF\u7F29\u7565\u56FE\u9884\u89C8\u591A\u4E2A\u6587\u4EF6")
 
         roi_clear = ttk.Button(
-            roi_frame, text="\u6E05\u7A7A", command=lambda: self.roi_var.set(""), width=6
+            roi_frame,
+            text="\u6E05\u7A7A ROI",
+            command=lambda: self.roi_var.set(""),
+            width=8,
         )
         roi_clear.grid(row=0, column=3)
 
         row += 1
 
         # --- Advanced Options ---
-        adv_frame = ttk.LabelFrame(self, text="\u9AD8\u7EA7\u9009\u9879", padding=10)
+        adv_frame = ttk.LabelFrame(body, text="\u9AD8\u7EA7\u9009\u9879", padding=10)
         adv_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         adv_frame.columnconfigure(1, weight=1)
         adv_frame.columnconfigure(3, weight=1)

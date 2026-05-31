@@ -193,6 +193,8 @@ class GuiResilienceTests(unittest.TestCase):
                     app.output_tab.png_scale_var.set("log")
                     app.output_tab.png_min_var.set("-5")
                     app.output_tab.png_max_var.set("500")
+                    app.output_tab.png_dpi_var.set(600)
+                    app.output_tab.plot_export_preset_var.set("Publication")
                     app._save_config_impl()
                 finally:
                     app.destroy()
@@ -203,6 +205,11 @@ class GuiResilienceTests(unittest.TestCase):
                     self.assertEqual(app2.output_tab.png_scale_var.get(), "log")
                     self.assertEqual(app2.output_tab.png_min_var.get(), "-5")
                     self.assertEqual(app2.output_tab.png_max_var.get(), "500")
+                    self.assertEqual(app2.output_tab.png_dpi_var.get(), 600)
+                    self.assertEqual(
+                        app2.output_tab.plot_export_preset_var.get(),
+                        "Publication",
+                    )
                 finally:
                     app2.destroy()
 

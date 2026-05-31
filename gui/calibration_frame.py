@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from core.loader import load_image, _lazy_import_matplotlib
+from core.plot_style import apply_matplotlib_style, style_figure_axes
 from core.utils import summarize_array_stats
 
 
@@ -228,6 +229,8 @@ class CalibrationManagerDialog(tk.Toplevel):
             return
 
         Figure, FigureCanvasTkAgg = _lazy_import_matplotlib()
+        import matplotlib
+        apply_matplotlib_style(matplotlib, preset="raw_inspection")
 
         # Clear previous preview
         for w in self._preview_canvas_frame.winfo_children():
@@ -240,6 +243,7 @@ class CalibrationManagerDialog(tk.Toplevel):
         ax.set_title(
             f"\u5E73\u5747\u7ED3\u679C ({self.average_method_var.get()})"
         )
+        style_figure_axes(fig, preset="raw_inspection")
         fig.tight_layout()
 
         canvas = FigureCanvasTkAgg(fig, master=self._preview_canvas_frame)

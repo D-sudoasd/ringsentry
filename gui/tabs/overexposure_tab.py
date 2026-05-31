@@ -61,6 +61,7 @@ class OverexposureRepairTab(ttk.Frame):
         self.last_csv: Optional[str] = None
         self._vars()
         self._layout()
+        self._localize_ui_text()
         self._check_imports()
         self.after(100, self._poll)
 
@@ -112,12 +113,10 @@ class OverexposureRepairTab(ttk.Frame):
         ttk.Label(top, text=APP_TITLE, font=("TkDefaultFont", 13, "bold")).grid(
             row=0, column=0, sticky="w"
         )
-        ttk.Button(top, text="保存配置", command=self.save_config).grid(
-            row=0, column=1, padx=4
-        )
-        ttk.Button(top, text="加载配置", command=self.load_config).grid(
-            row=0, column=2, padx=4
-        )
+        self.save_config_btn = ttk.Button(top, text="保存配置", command=self.save_config)
+        self.save_config_btn.grid(row=0, column=1, padx=4)
+        self.load_config_btn = ttk.Button(top, text="加载配置", command=self.load_config)
+        self.load_config_btn.grid(row=0, column=2, padx=4)
 
         nb = ttk.Notebook(self)
         nb.grid(row=1, column=0, sticky="nsew", pady=(10, 8))
@@ -174,25 +173,129 @@ class OverexposureRepairTab(ttk.Frame):
             row=4, column=0, sticky="ew"
         )
 
+    def _localize_ui_text(self):
+        """Replace legacy mojibake labels with readable Chinese UI text."""
+        self.status.set("请选择输入/输出文件夹；建议先运行“只扫描”。")
+        self.summary.set("未运行。")
+
+        self.repair_notebook = self.tab_basic.master
+        for index, label in enumerate(
+            ["文件与输出", "修复规则", "安全与复现", "项目元数据", "日志"]
+        ):
+            self.repair_notebook.tab(index, text=label)
+
+        self.save_config_btn.configure(text="保存配置")
+        self.load_config_btn.configure(text="加载配置")
+        self.scan_btn.configure(text="只扫描")
+        self.dry_btn.configure(text="模拟修复 Dry-run")
+        self.run_btn.configure(text="开始安全修复")
+        self.stop_btn.configure(text="停止后续任务")
+        self.open_out_btn.configure(text="打开输出目录")
+        self.open_report_btn.configure(text="打开 QC 报告")
+
+        basic_io = self.tab_basic.grid_slaves(row=0, column=0)[0]
+        behavior = self.tab_basic.grid_slaves(row=1, column=0)[0]
+        suffix_box = behavior.grid_slaves(row=4, column=0)[0]
+        rules = self.tab_rules.grid_slaves(row=0, column=0)[0]
+        rules_info = self.tab_rules.grid_slaves(row=1, column=0)[0]
+        safety = self.tab_safety.grid_slaves(row=0, column=0)[0]
+        criteria = self.tab_safety.grid_slaves(row=1, column=0)[0]
+        meta = self.tab_meta.grid_slaves(row=0, column=0)[0]
+
+        basic_io.configure(text="输入/输出")
+        behavior.configure(text="批处理行为")
+        rules.configure(text="像素替换规则")
+        safety.configure(text="安全与可追溯")
+        meta.configure(text="项目元数据（写入配置和 QC 报告，不改 CBF 数据）")
+
+        basic_io.grid_slaves(row=0, column=0)[0].configure(text="输入文件夹")
+        basic_io.grid_slaves(row=1, column=0)[0].configure(text="输出文件夹")
+        basic_io.grid_slaves(row=0, column=2)[0].configure(text="选择输入文件夹")
+        basic_io.grid_slaves(row=1, column=2)[0].configure(text="选择输出文件夹")
+        suffix_box.pack_slaves()[0].configure(text="输出后缀")
+        suffix_box.pack_slaves()[2].configure(
+            text="例如 sample.cbf -> sample_zero2sat.cbf"
+        )
+
+        for row, column, text in [
+            (0, 0, "递归处理子文件夹"),
+            (0, 1, "跳过输出目录"),
+            (1, 0, "保留子目录结构"),
+            (1, 1, "覆盖已存在输出"),
+            (2, 0, "未修改文件也复制"),
+            (3, 0, "覆盖原文件（不推荐）"),
+            (3, 1, "覆盖前自动备份 .bak_zero2sat_original"),
+        ]:
+            behavior.grid_slaves(row=row, column=column)[0].configure(text=text)
+
+        rules.grid_slaves(row=0, column=0)[0].configure(text="异常值")
+        rules.grid_slaves(row=0, column=2)[0].configure(text="替换为")
+        rules.grid_slaves(row=0, column=4)[0].configure(
+            text="默认适配：过曝像素被保存为 0，饱和值使用 32766。"
+        )
+        rules.grid_slaves(row=1, column=0)[0].configure(
+            text="替换所有异常值（推荐：背景约 100 时，0 可视为异常）"
+        )
+        rules.grid_slaves(row=2, column=0)[0].configure(
+            text="只替换强峰附近异常值（保守，避免真实背景 0 被替换）"
+        )
+        rules.grid_slaves(row=3, column=0)[0].configure(text="强峰阈值")
+        rules.grid_slaves(row=3, column=2)[0].configure(text="邻域半径/像素")
+        rules_info.configure(
+            text=(
+                "建议流程：先用“只扫描”确认 0 像素数量和分布，"
+                "再用 Dry-run 检查预计替换数量，最后正式修复。\n"
+                "本工具不能恢复真实过曝强度，只生成便于质控的替换版数据。"
+            )
+        )
+
+        safety.grid_slaves(row=0, column=0)[0].configure(
+            text="写出后重新读回逐像素校验"
+        )
+        safety.grid_slaves(row=1, column=0)[0].configure(text="计算 SHA256 哈希")
+        safety.grid_slaves(row=2, column=0)[0].configure(text="生成 HTML QC 报告")
+        safety.grid_slaves(row=3, column=0)[0].configure(text="并行 worker 数")
+        criteria.configure(
+            text=(
+                "安全通过判据：\n"
+                "  status = repaired_verified\n"
+                "  nontarget_changed_before_write = 0\n"
+                "  target_not_replaced_before_write = 0\n"
+                "  readback_different_pixels = 0\n"
+                "  readback_nontarget_different_pixels = 0"
+            )
+        )
+
+        meta_labels = ["项目名称", "操作者", "样品", "线站", "探测器", "实验日期", "备注"]
+        for row, text in enumerate(meta_labels):
+            meta.grid_slaves(row=row, column=0)[0].configure(text=text)
+        return
+
     def _layout_basic(self):
         f = self.tab_basic
         f.columnconfigure(0, weight=1)
-        box = ttk.LabelFrame(f, text="输入/输出")
+        self.basic_io_frame = ttk.LabelFrame(f, text="输入/输出")
+        box = self.basic_io_frame
         box.grid(row=0, column=0, sticky="ew")
         box.columnconfigure(1, weight=1)
 
-        ttk.Label(box, text="输入文件夹").grid(row=0, column=0, sticky="w", padx=8, pady=8)
+        self.input_dir_label = ttk.Label(box, text="输入文件夹")
+        self.input_dir_label.grid(row=0, column=0, sticky="w", padx=8, pady=8)
         ttk.Entry(box, textvariable=self.input_dir).grid(
             row=0, column=1, sticky="ew", padx=8, pady=8
         )
-        ttk.Button(box, text="选择", command=self.choose_input).grid(row=0, column=2, padx=8)
-        ttk.Label(box, text="输出文件夹").grid(row=1, column=0, sticky="w", padx=8, pady=8)
+        self.choose_input_btn = ttk.Button(box, text="选择", command=self.choose_input)
+        self.choose_input_btn.grid(row=0, column=2, padx=8)
+        self.output_dir_label = ttk.Label(box, text="输出文件夹")
+        self.output_dir_label.grid(row=1, column=0, sticky="w", padx=8, pady=8)
         ttk.Entry(box, textvariable=self.output_dir).grid(
             row=1, column=1, sticky="ew", padx=8, pady=8
         )
-        ttk.Button(box, text="选择", command=self.choose_output).grid(row=1, column=2, padx=8)
+        self.choose_output_btn = ttk.Button(box, text="选择", command=self.choose_output)
+        self.choose_output_btn.grid(row=1, column=2, padx=8)
 
-        opt = ttk.LabelFrame(f, text="批处理行为")
+        self.behavior_frame = ttk.LabelFrame(f, text="批处理行为")
+        opt = self.behavior_frame
         opt.grid(row=1, column=0, sticky="ew", pady=10)
         checks = [
             ("递归处理子文件夹", self.recursive, "处理输入目录下所有子目录中的 CBF。"),
@@ -201,28 +304,38 @@ class OverexposureRepairTab(ttk.Frame):
             ("覆盖已存在输出", self.overwrite_output, "同名输出存在时覆盖；不勾选则跳过。"),
             ("未修改文件也复制", self.copy_unmodified, "没有 0 像素的文件也复制到输出目录。"),
         ]
+        check_attrs = [
+            "recursive_cb",
+            "skip_output_dir_cb",
+            "preserve_subfolders_cb",
+            "overwrite_output_cb",
+            "copy_unmodified_cb",
+        ]
         for i, (text, var, tip) in enumerate(checks):
             w = ttk.Checkbutton(opt, text=text, variable=var)
+            setattr(self, check_attrs[i], w)
             w.grid(row=i // 2, column=i % 2, sticky="w", padx=8, pady=6)
             ToolTip(w, tip)
 
-        ow = ttk.Checkbutton(
+        self.overwrite_original_cb = ttk.Checkbutton(
             opt, text="覆盖原文件（不推荐）", variable=self.overwrite_original
         )
-        ow.grid(row=3, column=0, sticky="w", padx=8, pady=6)
-        ToolTip(ow, "科研数据建议永远保留原始文件；GUI 默认禁止正式覆盖原文件。")
-        bw = ttk.Checkbutton(
+        self.overwrite_original_cb.grid(row=3, column=0, sticky="w", padx=8, pady=6)
+        ToolTip(self.overwrite_original_cb, "科研数据建议永远保留原始文件；GUI 默认禁止正式覆盖原文件。")
+        self.backup_before_overwrite_cb = ttk.Checkbutton(
             opt,
             text="覆盖前自动备份 .bak_zero2sat_original",
             variable=self.backup_before_overwrite,
         )
-        bw.grid(row=3, column=1, sticky="w", padx=8, pady=6)
+        self.backup_before_overwrite_cb.grid(row=3, column=1, sticky="w", padx=8, pady=6)
 
         suffix_box = ttk.Frame(opt)
         suffix_box.grid(row=4, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        ttk.Label(suffix_box, text="输出后缀").pack(side="left")
+        self.suffix_label = ttk.Label(suffix_box, text="输出后缀")
+        self.suffix_label.pack(side="left")
         ttk.Entry(suffix_box, textvariable=self.suffix, width=18).pack(side="left", padx=8)
-        ttk.Label(suffix_box, text="例如 sample.cbf -> sample_zero2sat.cbf").pack(
+        self.suffix_hint_label = ttk.Label(suffix_box, text="例如 sample.cbf -> sample_zero2sat.cbf")
+        self.suffix_hint_label.pack(
             side="left"
         )
 

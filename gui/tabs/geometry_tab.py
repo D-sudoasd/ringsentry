@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
+from gui.layout import ScrollableFrame
 from gui.tooltip import ToolTip
 
 
@@ -10,15 +11,22 @@ class GeometryTab(ttk.Frame):
     """Geometry and scaling options tab."""
 
     def __init__(self, parent, app):
-        super().__init__(parent, padding=15)
+        super().__init__(parent, padding=0)
         self.app = app
         self._create_widgets()
 
     def _create_widgets(self):
         self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.scrollable = ScrollableFrame(self, padding=15)
+        self.scrollable.grid(row=0, column=0, sticky="nsew")
+        self.body = self.scrollable.body
+        body = self.body
+        body.columnconfigure(0, weight=1)
 
         # --- Rotation & Flip ---
-        rot_frame = ttk.LabelFrame(self, text="\u65CB\u8F6C\u4E0E\u7FFB\u8F6C", padding=10)
+        rot_frame = ttk.LabelFrame(body, text="\u65CB\u8F6C\u4E0E\u7FFB\u8F6C", padding=10)
         rot_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         rot_frame.columnconfigure(1, weight=1)
 
@@ -44,7 +52,7 @@ class GeometryTab(ttk.Frame):
         ToolTip(cb_fy, "\u5782\u76F4\u7FFB\u8F6C\u56FE\u50CF")
 
         # --- Binning ---
-        bin_frame = ttk.LabelFrame(self, text="\u5408\u5E76 (Binning)", padding=10)
+        bin_frame = ttk.LabelFrame(body, text="\u5408\u5E76 (Binning)", padding=10)
         bin_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
 
         self.bin_factor_var = tk.IntVar(value=1)
@@ -60,7 +68,7 @@ class GeometryTab(ttk.Frame):
         )
 
         # --- Normalization ---
-        norm_frame = ttk.LabelFrame(self, text="\u5F52\u4E00\u5316 (Normalization)", padding=10)
+        norm_frame = ttk.LabelFrame(body, text="\u5F52\u4E00\u5316 (Normalization)", padding=10)
         norm_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         norm_frame.columnconfigure(1, weight=1)
 
@@ -80,7 +88,7 @@ class GeometryTab(ttk.Frame):
         )
 
         # --- Percentile Clipping ---
-        pclip_frame = ttk.LabelFrame(self, text="\u767E\u5206\u4F4D\u88C1\u526A (Percentile Clip)", padding=10)
+        pclip_frame = ttk.LabelFrame(body, text="\u767E\u5206\u4F4D\u88C1\u526A (Percentile Clip)", padding=10)
         pclip_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         pclip_frame.columnconfigure(1, weight=1)
         pclip_frame.columnconfigure(3, weight=1)
@@ -110,7 +118,7 @@ class GeometryTab(ttk.Frame):
         )
 
         # --- Intensity Transform ---
-        trans_frame = ttk.LabelFrame(self, text="\u5F3A\u5EA6\u53D8\u6362 (Intensity Transform)", padding=10)
+        trans_frame = ttk.LabelFrame(body, text="\u5F3A\u5EA6\u53D8\u6362 (Intensity Transform)", padding=10)
         trans_frame.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         trans_frame.columnconfigure(1, weight=1)
 
@@ -142,7 +150,7 @@ class GeometryTab(ttk.Frame):
         )
 
         # --- Hot Pixel Suppression ---
-        hot_frame = ttk.LabelFrame(self, text="\u70ED\u50CF\u7D20\u6291\u5236 (Hot Pixel Suppression)", padding=10)
+        hot_frame = ttk.LabelFrame(body, text="\u70ED\u50CF\u7D20\u6291\u5236 (Hot Pixel Suppression)", padding=10)
         hot_frame.grid(row=5, column=0, sticky="ew", pady=(0, 10))
 
         self.hot_pixel_enable_var = tk.BooleanVar(value=False)
@@ -175,7 +183,7 @@ class GeometryTab(ttk.Frame):
 
         # --- Reset ---
         ttk.Button(
-            self, text="\u91CD\u7F6E\u5168\u90E8\u51E0\u4F55/\u7F29\u653E\u53C2\u6570",
+            body, text="\u91CD\u7F6E\u5168\u90E8\u51E0\u4F55/\u7F29\u653E\u53C2\u6570",
             command=self._reset_geometry_scaling,
         ).grid(row=6, column=0, sticky="w", pady=(10, 0))
 

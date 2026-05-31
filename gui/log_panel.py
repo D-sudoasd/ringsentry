@@ -97,7 +97,7 @@ class LogPanel(ttk.Frame):
         log_scroll.grid(row=0, column=1, sticky="ns")
 
         self.log_txt = tk.Text(
-            log_label_frame, height=8,
+            log_label_frame, height=5,
             font=("Consolas", 9), wrap="word",
             bg="#1e1e2e", fg="#cdd6f4",
             insertbackground="#cdd6f4",

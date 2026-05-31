@@ -11,6 +11,12 @@ import numpy as np
 
 from gui.tooltip import ToolTip
 from core.diffraction_model import DiffractionModel, BEAMLINE_PRESETS
+from core.plot_style import (
+    PLOT_PRESET_LABELS,
+    apply_matplotlib_style,
+    save_figure,
+    style_axis,
+)
 
 # Use ASCII-safe display strings to avoid rendering issues on Windows
 _ANGSTROM = "A"      # Angstrom symbol fallback
@@ -34,6 +40,7 @@ class _DetectorPlotPanel(ttk.Frame):
                 matplotlib.use("TkAgg")
         except Exception:
             pass
+        apply_matplotlib_style(matplotlib, preset="raw_inspection")
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         from matplotlib.figure import Figure
         from matplotlib.patches import Rectangle, Circle
@@ -108,6 +115,7 @@ class _DetectorPlotPanel(ttk.Frame):
         self.ax.set_xlabel("Pixel X")
         self.ax.set_ylabel("Pixel Y")
         self.ax.legend(loc="upper right", fontsize="small")
+        style_axis(self.ax, preset="raw_inspection")
 
         if info_text:
             self.ax.text(
@@ -127,8 +135,8 @@ class _DetectorPlotPanel(ttk.Frame):
     def connect(self, event_name: str, callback):
         return self.canvas.mpl_connect(event_name, callback)
 
-    def export_png(self, path: str, dpi: int = 200) -> None:
-        self.figure.savefig(path, dpi=dpi, bbox_inches="tight")
+    def export_figure(self, path: str, preset: str = "Publication") -> None:
+        save_figure(self.figure, path, preset=preset)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +154,7 @@ class QCalculatorTab(ttk.Frame):
 
         self.vars: dict[str, tk.StringVar] = {}
         self.entries: dict[str, ttk.Entry] = {}
+        self.plot_export_preset_var = tk.StringVar(value="Publication")
         self.result_data: list[dict] = []
         self._plot_rings: list[dict] = []
         self._selected_q_nm: float | None = None
@@ -192,8 +201,16 @@ class QCalculatorTab(ttk.Frame):
 
         # Mouse wheel scrolling
         def _on_mousewheel(event):
+            x0 = left_canvas.winfo_rootx()
+            y0 = left_canvas.winfo_rooty()
+            x1 = x0 + left_canvas.winfo_width()
+            y1 = y0 + left_canvas.winfo_height()
+            if not (x0 <= event.x_root <= x1 and y0 <= event.y_root <= y1):
+                return None
             left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        left_canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+")
+            return "break"
+
+        self.winfo_toplevel().bind("<MouseWheel>", _on_mousewheel, add="+")
 
         left = self._left_frame
 
@@ -367,12 +384,29 @@ class QCalculatorTab(ttk.Frame):
         btn_row = ttk.Frame(left)
         btn_row.pack(fill="x", padx=4, pady=6)
 
-        btn_calc = ttk.Button(btn_row, text=">>> \u8ba1\u7b97 / Calculate <<<", command=self.run_calculation)
+        btn_calc = ttk.Button(btn_row, text="\u8ba1\u7b97 Q \u73af", command=self.run_calculation)
         btn_calc.pack(side="left", fill="x", expand=True)
         ToolTip(btn_calc, "\u6267\u884c Q \u2192 \u50cf\u7d20\u534a\u5f84\u8ba1\u7b97 (\u6216\u6309 Enter)")
 
-        ttk.Button(btn_row, text="CSV", width=5, command=self._export_csv).pack(side="left", padx=(6, 2))
-        ttk.Button(btn_row, text="PNG", width=5, command=self._export_png).pack(side="left")
+        ttk.Button(btn_row, text="\u5bfc\u51fa CSV", command=self._export_csv).pack(side="left", padx=(6, 2))
+        ttk.Button(btn_row, text="\u5bfc\u51fa\u56fe\u50cf", command=self._export_png).pack(side="left")
+
+        preset_row = ttk.Frame(left)
+        preset_row.pack(fill="x", padx=4, pady=(0, 6))
+        ttk.Label(preset_row, text="\u56fe\u50cf\u9884\u8bbe:").pack(side="left")
+        self.q_plot_preset_cb = ttk.Combobox(
+            preset_row,
+            values=list(PLOT_PRESET_LABELS),
+            textvariable=self.plot_export_preset_var,
+            state="readonly",
+            width=22,
+        )
+        self.q_plot_preset_cb.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        ToolTip(
+            self.q_plot_preset_cb,
+            "\u63a7\u5236\u5bfc\u51fa\u56fe\u50cf\u5c3a\u5bf8\u3001dpi\u3001"
+            "\u5b57\u53f7\u3001\u7ebf\u5bbd\u548c\u8fb9\u8ddd\u3002",
+        )
 
         # -- Results table --
         lf_res = ttk.LabelFrame(left, text="  Results / \u7ed3\u679c  ", padding=6)
@@ -862,13 +896,22 @@ class QCalculatorTab(ttk.Frame):
 
     def _export_png(self):
         path = filedialog.asksaveasfilename(
-            defaultextension=".png", filetypes=[("PNG", "*.png")],
+            defaultextension=".png",
+            filetypes=[
+                ("PNG", "*.png"),
+                ("PDF", "*.pdf"),
+                ("SVG", "*.svg"),
+                ("EPS", "*.eps"),
+            ],
         )
         if not path:
             return
         try:
-            self.plot_panel.export_png(path)
-            self.app.log(f"Q Calculator: PNG exported -- {path}")
+            self.plot_panel.export_figure(path, self.plot_export_preset_var.get())
+            self.app.log(
+                f"Q Calculator: figure exported "
+                f"({self.plot_export_preset_var.get()}) -- {path}"
+            )
         except Exception as e:
             messagebox.showerror("Export Error", str(e))
 
@@ -904,12 +947,17 @@ class QCalculatorTab(ttk.Frame):
     # ------------------------------------------------------------------ config
 
     def get_config(self) -> dict:
-        return {k: v.get() for k, v in self.vars.items() if k != "preset"}
+        cfg = {k: v.get() for k, v in self.vars.items() if k != "preset"}
+        cfg["plot_export_preset"] = self.plot_export_preset_var.get()
+        return cfg
 
     def load_config(self, cfg: dict):
         self._load_custom_presets(cfg)
         for k, v in cfg.items():
             if k == "q_calc_custom_presets":
+                continue
+            if k == "plot_export_preset":
+                self.plot_export_preset_var.set(str(v))
                 continue
             if k in self.vars:
                 self.vars[k].set(str(v))

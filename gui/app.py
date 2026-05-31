@@ -608,6 +608,7 @@ class App(tk.Tk):
                 "vmin": self.output_tab.png_min_var.get(),
                 "vmax": self.output_tab.png_max_var.get(),
                 "colormap": self.output_tab.png_colormap_var.get(),
+                "dpi": self.output_tab.png_dpi_var.get(),
             }
             if "png" in formats:
                 png_opts = validate_png_options(png_opts)
@@ -859,7 +860,9 @@ class App(tk.Tk):
                 f"scale={self.output_tab.png_scale_var.get()}, "
                 f"I Min/I Max={self.output_tab.png_min_var.get()} / "
                 f"{self.output_tab.png_max_var.get()}, "
-                f"colormap={self.output_tab.png_colormap_var.get()}"
+                f"colormap={self.output_tab.png_colormap_var.get()}, "
+                f"dpi={self.output_tab.png_dpi_var.get()}, "
+                f"preset={self.output_tab.plot_export_preset_var.get()}"
                 if "png" in formats else "PNG Display: <not selected>"
             ),
             f"Elapsed: {elapsed}",
@@ -992,6 +995,11 @@ class App(tk.Tk):
             o.png_min_var.set(png_options.get('vmin', ''))
             o.png_max_var.set(png_options.get('vmax', ''))
             o.png_colormap_var.set(png_options.get('colormap', 'viridis'))
+            o.png_dpi_var.set(png_options.get('dpi', 300))
+            o.plot_export_preset_var.set(
+                png_options.get('preset', 'Raw inspection')
+            )
+            o._sync_png_controls()
             o.overwrite_var.set(config.get('overwrite', False))
             o.lossless_matrix_var.set(config.get('lossless_matrix', True))
 
@@ -1128,6 +1136,8 @@ class App(tk.Tk):
                 'vmin': o.png_min_var.get(),
                 'vmax': o.png_max_var.get(),
                 'colormap': o.png_colormap_var.get(),
+                'dpi': o.png_dpi_var.get(),
+                'preset': o.plot_export_preset_var.get(),
             },
             'overwrite': o.overwrite_var.get(),
             'lossless_matrix': o.lossless_matrix_var.get(),

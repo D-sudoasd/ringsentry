@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from core.loader import load_image, _lazy_import_matplotlib
+from core.plot_style import apply_matplotlib_style, style_axis
 
 
 def show_gallery(app):
@@ -32,6 +33,8 @@ def show_gallery(app):
 
     Figure, FigureCanvasTkAgg = _lazy_import_matplotlib()
     import matplotlib.cm
+    import matplotlib
+    apply_matplotlib_style(matplotlib, preset="raw_inspection")
 
     try:
         from PIL import Image as PILImage, ImageTk as PILImageTk
@@ -101,16 +104,16 @@ def show_gallery(app):
 
     # Mouse wheel scrolling
     def _on_mousewheel(event):
+        x0 = outer_canvas.winfo_rootx()
+        y0 = outer_canvas.winfo_rooty()
+        x1 = x0 + outer_canvas.winfo_width()
+        y1 = y0 + outer_canvas.winfo_height()
+        if not (x0 <= event.x_root <= x1 and y0 <= event.y_root <= y1):
+            return None
         outer_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        return "break"
 
-    def _bind_mousewheel(event):
-        outer_canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-    def _unbind_mousewheel(event):
-        outer_canvas.unbind_all("<MouseWheel>")
-
-    outer_canvas.bind("<Enter>", _bind_mousewheel)
-    outer_canvas.bind("<Leave>", _unbind_mousewheel)
+    win.bind("<MouseWheel>", _on_mousewheel, add="+")
 
     result_queue = queue.Queue()
     # photo_refs keeps a strong reference to PhotoImage objects so they
@@ -173,6 +176,7 @@ def show_gallery(app):
             ax = fig_thumb.add_subplot(111)
             ax.imshow(thumb_data, cmap='viridis', aspect='auto')
             ax.axis('off')
+            style_axis(ax, preset="raw_inspection")
             fig_thumb.tight_layout(pad=0)
 
             canvas_thumb = FigureCanvasTkAgg(fig_thumb, master=frame)

@@ -17,16 +17,27 @@ def apply_theme(root: tk.Tk):
 def configure_styles(root: tk.Tk):
     """Configure custom ttk styles."""
     style = ttk.Style(root)
+    bg = "#f6f7f9"
+    text = "#20242a"
+    muted = "#5f6670"
+    accent = "#1769aa"
 
     # Custom font for labels
-    style.configure("TLabel", font=("Microsoft YaHei UI", 9))
+    style.configure("TFrame", background=bg)
+    style.configure("TLabel", font=("Microsoft YaHei UI", 9), foreground=text)
+    style.configure("Muted.TLabel", font=("Microsoft YaHei UI", 9), foreground=muted)
+    style.configure("TLabelframe", padding=8)
     style.configure("TLabelframe.Label", font=("Microsoft YaHei UI", 10, "bold"))
     style.configure("TCheckbutton", font=("Microsoft YaHei UI", 9))
     style.configure("TButton", font=("Microsoft YaHei UI", 9))
-    style.configure("Accent.TButton", font=("Microsoft YaHei UI", 10, "bold"))
+    style.configure(
+        "Accent.TButton",
+        font=("Microsoft YaHei UI", 10, "bold"),
+        foreground=accent,
+    )
 
     # Tab style
-    style.configure("TNotebook.Tab", font=("Microsoft YaHei UI", 10), padding=[12, 6])
+    style.configure("TNotebook.Tab", font=("Microsoft YaHei UI", 10), padding=[16, 8])
 
     # Log text style
     style.configure("Log.TFrame", background="#1e1e2e")

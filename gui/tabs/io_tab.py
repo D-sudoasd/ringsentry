@@ -4,6 +4,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog
 
+from gui.layout import ScrollableFrame
 from gui.tooltip import ToolTip
 
 
@@ -11,18 +12,25 @@ class IOTab(ttk.Frame):
     """Input and Output settings tab."""
 
     def __init__(self, parent, app):
-        super().__init__(parent, padding=15)
+        super().__init__(parent, padding=0)
         self.app = app
         self._create_widgets()
 
     def _create_widgets(self):
         # Use grid for structured layout
-        self.columnconfigure(1, weight=1)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.scrollable = ScrollableFrame(self, padding=15)
+        self.scrollable.grid(row=0, column=0, sticky="nsew")
+        self.body = self.scrollable.body
+        body = self.body
+        body.columnconfigure(1, weight=1)
 
         row = 0
 
         # --- Input Mode ---
-        mode_frame = ttk.LabelFrame(self, text="\u8F93\u5165\u6A21\u5F0F", padding=10)
+        mode_frame = ttk.LabelFrame(body, text="\u8F93\u5165\u6A21\u5F0F", padding=10)
         mode_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         mode_frame.columnconfigure(1, weight=1)
 
@@ -44,7 +52,7 @@ class IOTab(ttk.Frame):
         row += 1
 
         # --- Input Folder ---
-        dir_frame = ttk.LabelFrame(self, text="\u8F93\u5165\u6587\u4EF6\u5939", padding=10)
+        dir_frame = ttk.LabelFrame(body, text="\u8F93\u5165\u6587\u4EF6\u5939", padding=10)
         dir_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         dir_frame.columnconfigure(0, weight=1)
 
@@ -52,13 +60,18 @@ class IOTab(ttk.Frame):
         dir_entry = ttk.Entry(dir_frame, textvariable=self.dir_var, font=("Consolas", 9))
         dir_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         ToolTip(dir_entry, "\u9009\u62E9\u5305\u542B\u5F85\u5904\u7406\u56FE\u50CF\u6587\u4EF6\u7684\u6839\u76EE\u5F55\uFF0C\u7A0B\u5E8F\u4F1A\u81EA\u52A8\u9012\u5F52\u67E5\u627E")
-        dir_btn = ttk.Button(dir_frame, text="\u6D4F\u89C8...", command=self._select_dir, width=10)
+        dir_btn = ttk.Button(
+            dir_frame,
+            text="\u9009\u62E9\u8F93\u5165\u6587\u4EF6\u5939",
+            command=self._select_dir,
+            width=14,
+        )
         dir_btn.grid(row=0, column=1)
 
         row += 1
 
         # --- Selected Files ---
-        files_frame = ttk.LabelFrame(self, text="\u5DF2\u9009\u6587\u4EF6", padding=10)
+        files_frame = ttk.LabelFrame(body, text="\u5DF2\u9009\u6587\u4EF6", padding=10)
         files_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         files_frame.columnconfigure(0, weight=1)
 
@@ -72,9 +85,19 @@ class IOTab(ttk.Frame):
 
         btn_frame = ttk.Frame(files_frame)
         btn_frame.grid(row=0, column=1)
-        files_btn = ttk.Button(btn_frame, text="\u9009\u62E9\u6587\u4EF6", command=self._select_files, width=10)
+        files_btn = ttk.Button(
+            btn_frame,
+            text="\u9009\u62E9\u8F93\u5165\u6587\u4EF6",
+            command=self._select_files,
+            width=12,
+        )
         files_btn.pack(side="left", padx=(0, 5))
-        clear_btn = ttk.Button(btn_frame, text="\u6E05\u7A7A", command=self._clear_selected_files, width=6)
+        clear_btn = ttk.Button(
+            btn_frame,
+            text="\u6E05\u7A7A\u6587\u4EF6\u5217\u8868",
+            command=self._clear_selected_files,
+            width=12,
+        )
         clear_btn.pack(side="left")
         ToolTip(files_btn, "\u9009\u62E9\u4E00\u4E2A\u6216\u591A\u4E2A\u5177\u4F53\u6587\u4EF6\u8FDB\u884C\u5904\u7406\uFF0C\u652F\u6301\u591A\u9009")
         ToolTip(clear_btn, "\u6E05\u7A7A\u5F53\u524D\u5DF2\u9009\u6587\u4EF6\u5217\u8868")
@@ -82,7 +105,7 @@ class IOTab(ttk.Frame):
         row += 1
 
         # --- Output Root ---
-        out_frame = ttk.LabelFrame(self, text="\u8F93\u51FA\u76EE\u5F55", padding=10)
+        out_frame = ttk.LabelFrame(body, text="\u8F93\u51FA\u76EE\u5F55", padding=10)
         out_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         out_frame.columnconfigure(0, weight=1)
 
@@ -94,13 +117,18 @@ class IOTab(ttk.Frame):
             "\u8F93\u51FA\u6587\u4EF6\u7684\u4FDD\u5B58\u76EE\u5F55\u3002\n"
             "\u5982\u679C\u4E0D\u6307\u5B9A\uFF1A\u76EE\u5F55\u6A21\u5F0F\u9ED8\u8BA4\u8F93\u51FA\u5230\u8F93\u5165\u76EE\u5F55\u4E0B\u7684 _converted",
         )
-        outdir_btn = ttk.Button(out_frame, text="\u6D4F\u89C8...", command=self._select_outdir, width=10)
+        outdir_btn = ttk.Button(
+            out_frame,
+            text="\u9009\u62E9\u8F93\u51FA\u76EE\u5F55",
+            command=self._select_outdir,
+            width=12,
+        )
         outdir_btn.grid(row=0, column=1)
 
         row += 1
 
         # --- HDF5 Path ---
-        h5_frame = ttk.LabelFrame(self, text="HDF5 \u6570\u636E\u96C6\u8DEF\u5F84", padding=10)
+        h5_frame = ttk.LabelFrame(body, text="HDF5 \u6570\u636E\u96C6\u8DEF\u5F84", padding=10)
         h5_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         h5_frame.columnconfigure(0, weight=1)
 
@@ -112,7 +140,7 @@ class IOTab(ttk.Frame):
         row += 1
 
         # --- Workflow Preset ---
-        preset_frame = ttk.LabelFrame(self, text="\u5DE5\u4F5C\u6D41\u9884\u8BBE", padding=10)
+        preset_frame = ttk.LabelFrame(body, text="\u5DE5\u4F5C\u6D41\u9884\u8BBE", padding=10)
         preset_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         preset_frame.columnconfigure(0, weight=1)
 
