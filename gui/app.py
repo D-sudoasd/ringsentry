@@ -62,6 +62,10 @@ class App(tk.Tk):
         self.cancellation_event = threading.Event()
         self.thread_pool = None
         self.is_running = False
+        self._pending_ui_after_ids = set()
+        self._ui_callback_lock = threading.Lock()
+        self._destroying = False
+        self._mainloop_active = False
         self.done_count = 0
         self.count_lock = threading.Lock()
         self.stats = {
@@ -116,6 +120,65 @@ class App(tk.Tk):
     # --- Convenience properties for log ---
     def log(self, msg):
         self.log_panel.log(msg)
+
+    def _schedule_ui_callback(self, callback):
+        """Queue a UI callback from a worker thread if the Tk loop is still alive."""
+        after_id = None
+        callback_ran = False
+
+        def run_callback():
+            nonlocal callback_ran
+            with self._ui_callback_lock:
+                callback_ran = True
+                if after_id is not None:
+                    self._pending_ui_after_ids.discard(after_id)
+                if self._destroying:
+                    return
+            callback()
+
+        with self._ui_callback_lock:
+            if self._destroying or not self._mainloop_active:
+                return False
+
+        try:
+            after_id = self.after(0, run_callback)
+        except (RuntimeError, tk.TclError):
+            return False
+
+        should_cancel = False
+        with self._ui_callback_lock:
+            if callback_ran:
+                return True
+            if self._destroying:
+                should_cancel = True
+            else:
+                self._pending_ui_after_ids.add(after_id)
+                return True
+        if should_cancel:
+            try:
+                self.after_cancel(after_id)
+            except (RuntimeError, tk.TclError):
+                pass
+            return False
+        return True
+
+    def _cancel_pending_ui_callbacks(self):
+        with self._ui_callback_lock:
+            self._destroying = True
+            pending_after_ids = list(self._pending_ui_after_ids)
+            self._pending_ui_after_ids.clear()
+        for after_id in pending_after_ids:
+            try:
+                self.after_cancel(after_id)
+            except (RuntimeError, tk.TclError):
+                pass
+
+    def mainloop(self, *args, **kwargs):
+        self._mainloop_active = True
+        try:
+            return super().mainloop(*args, **kwargs)
+        finally:
+            self._mainloop_active = False
 
     # --- File list management ---
     def _get_active_input_filelist(self):
@@ -741,25 +804,30 @@ class App(tk.Tk):
                     ]
                     for fut in concurrent.futures.as_completed(futures):
                         if fut.cancelled():
-                            self.after(
-                                0,
+                            if not self._schedule_ui_callback(
                                 lambda: on_done_threadsafe(
                                     ["CANCELLED: future cancelled"]
                                 ),
-                            )
+                            ):
+                                return
                             continue
                         try:
                             logs = fut.result()
                         except Exception as e:
                             logs = [f"FAILED: worker exception -> {e}"]
-                        self.after(0, lambda logs=logs: on_done_threadsafe(logs))
+                        if not self._schedule_ui_callback(
+                            lambda logs=logs: on_done_threadsafe(logs)
+                        ):
+                            return
             except Exception as e:
                 self.thread_pool = None
-                self.after(0, lambda e=e: self._handle_worker_thread_error(e))
+                self._schedule_ui_callback(
+                    lambda e=e: self._handle_worker_thread_error(e)
+                )
                 return
 
             self.thread_pool = None
-            self.after(0, lambda: self._finalize_run(outroot))
+            self._schedule_ui_callback(lambda: self._finalize_run(outroot))
 
         threading.Thread(target=main_thread_func, daemon=True).start()
 
@@ -1206,3 +1274,7 @@ class App(tk.Tk):
                 return
         self._save_config()
         self.destroy()
+
+    def destroy(self):
+        self._cancel_pending_ui_callbacks()
+        super().destroy()

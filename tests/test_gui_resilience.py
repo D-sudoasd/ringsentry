@@ -146,6 +146,59 @@ class GuiResilienceTests(unittest.TestCase):
             finally:
                 app.destroy()
 
+    def test_worker_ui_callback_is_dropped_after_mainloop_exit(self):
+        app = self._create_app()
+        try:
+            def raise_after(*_args, **_kwargs):
+                raise RuntimeError("main thread is not in main loop")
+
+            app._mainloop_active = True
+            app.after = raise_after
+
+            scheduled = app._schedule_ui_callback(lambda: None)
+
+            self.assertFalse(scheduled)
+        finally:
+            app.destroy()
+
+    def test_worker_ui_callback_is_dropped_when_mainloop_is_inactive(self):
+        app = self._create_app()
+        try:
+            scheduled = app._schedule_ui_callback(lambda: None)
+
+            self.assertFalse(scheduled)
+        finally:
+            app.destroy()
+
+    def test_pending_worker_ui_callback_is_cancelled_on_destroy(self):
+        app = self._create_app()
+        try:
+            app._mainloop_active = True
+            scheduled = app._schedule_ui_callback(lambda: None)
+            self.assertTrue(scheduled)
+            self.assertTrue(app._pending_ui_after_ids)
+
+            app.destroy()
+
+            self.assertFalse(app._pending_ui_after_ids)
+        finally:
+            try:
+                app.destroy()
+            except tk.TclError:
+                pass
+
+    def test_overexposure_poll_timer_is_cancelled_on_destroy(self):
+        app = self._create_app()
+        try:
+            tab = app.overexposure_tab
+            self.assertIsNotNone(tab._poll_after_id)
+
+            tab.destroy()
+
+            self.assertIsNone(tab._poll_after_id)
+        finally:
+            app.destroy()
+
     def test_output_tab_has_png_options_default_off(self):
         with tempfile.TemporaryDirectory(prefix="gui_default_config_") as tmp:
             config_path = str(Path(tmp) / "config.json")

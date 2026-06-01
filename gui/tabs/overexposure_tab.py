@@ -59,11 +59,12 @@ class OverexposureRepairTab(ttk.Frame):
         self.last_output_dir: Optional[Path] = None
         self.last_html_report: Optional[str] = None
         self.last_csv: Optional[str] = None
+        self._poll_after_id = None
         self._vars()
         self._layout()
         self._localize_ui_text()
         self._check_imports()
-        self.after(100, self._poll)
+        self._poll_after_id = self.after(100, self._poll)
 
     def _vars(self):
         self.input_dir = tk.StringVar()
@@ -733,7 +734,16 @@ class OverexposureRepairTab(ttk.Frame):
                     self.dry_run.set(False)
         except queue.Empty:
             pass
-        self.after(100, self._poll)
+        self._poll_after_id = self.after(100, self._poll)
+
+    def destroy(self):
+        if self._poll_after_id is not None:
+            try:
+                self.after_cancel(self._poll_after_id)
+            except tk.TclError:
+                pass
+            self._poll_after_id = None
+        super().destroy()
 
     @staticmethod
     def format_result(i: int, total: int, result) -> str:
