@@ -1,25 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
   <title id="title">RingSentry</title>
-  <desc id="desc">Reproducible preprocessing and quality control for 2D diffraction detector images from SAXS, WAXS, SXRD, and GIWAXS.</desc>
-  <rect width="1200" height="340" rx="28" fill="#0a0f18"/>
-  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif">
-    <text x="56" y="68" fill="#38bdf8" font-size="18" font-weight="700" letter-spacing="2">SAXS · WAXS · SXRD · GIWAXS</text>
-    <text x="56" y="124" fill="#f8fafc" font-size="48" font-weight="800">RingSentry</text>
-    <text x="56" y="170" fill="#94a3b8" font-size="22">Safe 2D detector preprocessing before analysis.</text>
-    <text x="56" y="210" fill="#64748b" font-size="18">dark/flat · ROI/mask · QC · reports · Q tools</text>
-    <text x="56" y="260" fill="#475569" font-size="16">二维衍射图预处理 · 尽量避免静默损坏 · 参数进日志</text>
-    <text x="56" y="300" fill="#64748b" font-size="15">DOI 10.5281/zenodo.19602728 · MIT · Windows GUI</text>
+  <desc id="desc">Reproducible preprocessing and quality control for 2D diffraction detector images.</desc>
+  <rect width="1200" height="360" rx="26" fill="#050607"/>
+  <path d="M0 54H1200M700 0V360" stroke="#1C1F24"/>
+  <g transform="translate(56 40)" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text fill="#7A8088" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" letter-spacing="2.2">SAXS · WAXS · SXRD · GIWAXS</text>
+    <text y="100" fill="#F4F5F6" font-size="62" font-weight="760" letter-spacing="-2.2">RingSentry</text>
+    <text y="148" fill="#A8ADB4" font-size="23">Safe 2D detector cleanup before analysis.</text>
+    <path d="M0 176H500" stroke="#2A2E34"/>
+    <g transform="translate(0 210)" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">
+      <text fill="#F4F5F6">DARK/FLAT</text>
+      <text x="118" fill="#6E747C">ROI/MASK</text>
+      <text x="224" fill="#6E747C">QC</text>
+      <text x="276" fill="#6E747C">REPORT</text>
+      <text x="360" fill="#6EC1FF">PREFLIGHT</text>
+    </g>
+    <text y="270" fill="#5A6068" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">DOI 10.5281/zenodo.19602728 · no silent damage</text>
   </g>
-  <!-- detector ring proof -->
-  <g transform="translate(720 50)">
-    <rect width="420" height="240" rx="16" fill="#0f172a" stroke="#1e3a5f" stroke-width="2"/>
-    <circle cx="210" cy="120" r="95" fill="none" stroke="#1e293b" stroke-width="18"/>
-    <circle cx="210" cy="120" r="95" fill="none" stroke="#38bdf8" stroke-width="2" opacity="0.7"/>
-    <circle cx="210" cy="120" r="70" fill="none" stroke="#7dd3fc" stroke-width="1.5" opacity="0.5"/>
-    <circle cx="210" cy="120" r="45" fill="none" stroke="#bae6fd" stroke-width="1" opacity="0.4"/>
-    <circle cx="210" cy="120" r="4" fill="#fbbf24"/>
-    <!-- ROI rect -->
-    <rect x="130" y="50" width="160" height="140" fill="none" stroke="#a7f3d0" stroke-width="2" stroke-dasharray="6 4"/>
-    <text x="24" y="220" fill="#64748b" font-family="ui-monospace, monospace" font-size="13">preview → preflight → batch → run_report</text>
+  <g transform="translate(740 48)" fill="none" stroke="#DDE0E3" stroke-width="1.5">
+    <rect width="400" height="264" fill="#0B0D10" stroke="#262A30"/>
+    <circle cx="200" cy="118" r="92" stroke="#2A3038"/>
+    <circle cx="200" cy="118" r="72" stroke="#5A6A7A" opacity="0.9"/>
+    <circle cx="200" cy="118" r="52" stroke="#8AA0B4" opacity="0.75"/>
+    <circle cx="200" cy="118" r="32" stroke="#B8C8D8" opacity="0.55"/>
+    <circle cx="200" cy="118" r="4" fill="#E8C36A" stroke="none"/>
+    <rect x="118" y="48" width="164" height="140" stroke="#8FE3B8" stroke-dasharray="6 5"/>
+    <text x="28" y="248" fill="#5A6068" stroke="none" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">preview → preflight → batch → run_report</text>
   </g>
+  <text x="1144" y="336" text-anchor="end" fill="#4A5058" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">D-sudoasd / ringsentry</text>
 </svg>
