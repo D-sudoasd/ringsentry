@@ -1,8 +1,4 @@
-"""CBF overexposure repair tab.
-
-This tab embeds the Zero2Sat workflow from the DESY P21.2 data-treatment tool.
-The numerical repair logic lives in ``core.overexposure_repair``.
-"""
+"""RingSentry tab for the CBF Zero2Sat overexposure-repair component."""
 
 from __future__ import annotations
 
@@ -19,6 +15,7 @@ from typing import Optional, Union
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from core.constants import APP_VERSION as RINGSENTRY_APP_VERSION
 from gui.tooltip import ToolTip
 
 try:
@@ -26,7 +23,9 @@ try:
     import numpy as np  # noqa: F401
 
     from core.overexposure_repair import (
-        APP_VERSION,
+        COMPONENT_NAME,
+        SOFTWARE_NAME,
+        SOFTWARE_VERSION,
         ProcessConfig,
         ProjectMetadata,
         config_to_dict,
@@ -40,14 +39,14 @@ else:
 
 
 APP_TITLE = (
-    f"CBF Zero2Sat 过曝修复工具 v{APP_VERSION}"
+    f"{SOFTWARE_NAME} v{SOFTWARE_VERSION} — {COMPONENT_NAME}"
     if IMPORT_ERROR is None
-    else "CBF Zero2Sat 过曝修复工具"
+    else f"RingSentry {RINGSENTRY_APP_VERSION} — CBF Zero2Sat 过曝修复"
 )
 
 
 class OverexposureRepairTab(ttk.Frame):
-    """Notebook tab for safe CBF zero-to-saturation repair."""
+    """Notebook tab for guarded CBF exceptional-value replacement."""
 
     def __init__(self, parent, app):
         super().__init__(parent, padding=10)
@@ -74,8 +73,6 @@ class OverexposureRepairTab(ttk.Frame):
         self.skip_output_dir = tk.BooleanVar(value=True)
         self.preserve_subfolders = tk.BooleanVar(value=True)
         self.overwrite_output = tk.BooleanVar(value=True)
-        self.overwrite_original = tk.BooleanVar(value=False)
-        self.backup_before_overwrite = tk.BooleanVar(value=True)
         self.copy_unmodified = tk.BooleanVar(value=False)
 
         self.mode = tk.StringVar(value="all_zero")
@@ -88,14 +85,14 @@ class OverexposureRepairTab(ttk.Frame):
         self.verify_after_write = tk.BooleanVar(value=True)
         self.compute_sha256 = tk.BooleanVar(value=True)
         self.generate_html_report = tk.BooleanVar(value=True)
-        self.dry_run = tk.BooleanVar(value=False)
+        self.dry_run = tk.BooleanVar(value=True)
         self.workers = tk.StringVar(value="1")
 
         self.project_name = tk.StringVar()
         self.operator = tk.StringVar()
         self.sample = tk.StringVar()
         self.beamline = tk.StringVar()
-        self.detector = tk.StringVar(value="Varex")
+        self.detector = tk.StringVar()
         self.experiment_date = tk.StringVar()
         self.notes_text: Optional[tk.Text] = None
 
@@ -196,7 +193,7 @@ class OverexposureRepairTab(ttk.Frame):
 
         basic_io = self.tab_basic.grid_slaves(row=0, column=0)[0]
         behavior = self.tab_basic.grid_slaves(row=1, column=0)[0]
-        suffix_box = behavior.grid_slaves(row=4, column=0)[0]
+        suffix_box = behavior.grid_slaves(row=3, column=0)[0]
         rules = self.tab_rules.grid_slaves(row=0, column=0)[0]
         rules_info = self.tab_rules.grid_slaves(row=1, column=0)[0]
         safety = self.tab_safety.grid_slaves(row=0, column=0)[0]
@@ -224,18 +221,16 @@ class OverexposureRepairTab(ttk.Frame):
             (1, 0, "保留子目录结构"),
             (1, 1, "覆盖已存在输出"),
             (2, 0, "未修改文件也复制"),
-            (3, 0, "覆盖原文件（不推荐）"),
-            (3, 1, "覆盖前自动备份 .bak_zero2sat_original"),
         ]:
             behavior.grid_slaves(row=row, column=column)[0].configure(text=text)
 
         rules.grid_slaves(row=0, column=0)[0].configure(text="异常值")
         rules.grid_slaves(row=0, column=2)[0].configure(text="替换为")
         rules.grid_slaves(row=0, column=4)[0].configure(
-            text="默认适配：过曝像素被保存为 0，饱和值使用 32766。"
+            text="示例值：只有采集链证据确认后，才可将 0 替换为 32766。"
         )
         rules.grid_slaves(row=1, column=0)[0].configure(
-            text="替换所有异常值（推荐：背景约 100 时，0 可视为异常）"
+            text="所有匹配值都替换（需仪器/采集软件证据）"
         )
         rules.grid_slaves(row=2, column=0)[0].configure(
             text="只替换强峰附近异常值（保守，避免真实背景 0 被替换）"
@@ -246,7 +241,8 @@ class OverexposureRepairTab(ttk.Frame):
             text=(
                 "建议流程：先用“只扫描”确认 0 像素数量和分布，"
                 "再用 Dry-run 检查预计替换数量，最后正式修复。\n"
-                "本工具不能恢复真实过曝强度，只生成便于质控的替换版数据。"
+                "零值也可能来自 beamstop、模块间隙、掩膜或真实低计数；未经确认不应修改。\n"
+                "本工具不能恢复真实过曝强度；它只执行用户已确认的存储值替换规则。"
             )
         )
 
@@ -318,20 +314,8 @@ class OverexposureRepairTab(ttk.Frame):
             w.grid(row=i // 2, column=i % 2, sticky="w", padx=8, pady=6)
             ToolTip(w, tip)
 
-        self.overwrite_original_cb = ttk.Checkbutton(
-            opt, text="覆盖原文件（不推荐）", variable=self.overwrite_original
-        )
-        self.overwrite_original_cb.grid(row=3, column=0, sticky="w", padx=8, pady=6)
-        ToolTip(self.overwrite_original_cb, "科研数据建议永远保留原始文件；GUI 默认禁止正式覆盖原文件。")
-        self.backup_before_overwrite_cb = ttk.Checkbutton(
-            opt,
-            text="覆盖前自动备份 .bak_zero2sat_original",
-            variable=self.backup_before_overwrite,
-        )
-        self.backup_before_overwrite_cb.grid(row=3, column=1, sticky="w", padx=8, pady=6)
-
         suffix_box = ttk.Frame(opt)
-        suffix_box.grid(row=4, column=0, columnspan=2, sticky="w", padx=8, pady=6)
+        suffix_box.grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=6)
         self.suffix_label = ttk.Label(suffix_box, text="输出后缀")
         self.suffix_label.pack(side="left")
         ttk.Entry(suffix_box, textvariable=self.suffix, width=18).pack(side="left", padx=8)
@@ -355,12 +339,13 @@ class OverexposureRepairTab(ttk.Frame):
             row=0, column=3, sticky="w", padx=8
         )
         ttk.Label(
-            box, text="默认适配：过曝被保存为 0，饱和值使用 32766。"
+            box,
+            text="示例值：只有采集链证据确认后，才可将 0 替换为 32766。",
         ).grid(row=0, column=4, sticky="w", padx=8)
 
         ttk.Radiobutton(
             box,
-            text="所有异常值都替换（推荐：背景约 100，0 为异常）",
+            text="所有匹配值都替换（需仪器/采集软件证据）",
             variable=self.mode,
             value="all_zero",
         ).grid(row=1, column=0, columnspan=5, sticky="w", padx=8, pady=6)
@@ -383,7 +368,8 @@ class OverexposureRepairTab(ttk.Frame):
         info = (
             "建议流程：先用“只扫描”确认 0 像素数量和分布，"
             "再用 Dry-run 检查预期替换数量，最后正式修复。\n"
-            "本工具不能恢复真实过曝强度；它只把错误保存为 0 的像素替换为指定饱和值。"
+            "零值也可能来自 beamstop、模块间隙、掩膜或真实低计数；未经确认不应修改。\n"
+            "本工具不能恢复真实过曝强度；它只执行用户已确认的存储值替换规则。"
         )
         ttk.Label(f, text=info, foreground="#555", justify="left").grid(
             row=1, column=0, sticky="ew", pady=12
@@ -528,8 +514,8 @@ class OverexposureRepairTab(ttk.Frame):
             preserve_subfolders=self.preserve_subfolders.get(),
             suffix=self.suffix.get(),
             overwrite_output=self.overwrite_output.get(),
-            overwrite_original=self.overwrite_original.get(),
-            backup_before_overwrite=self.backup_before_overwrite.get(),
+            overwrite_original=False,
+            backup_before_overwrite=True,
             copy_unmodified=self.copy_unmodified.get(),
             mode=self.mode.get(),
             zero_value=self._parse_int_field(self.zero_value.get(), "异常值"),
@@ -554,8 +540,6 @@ class OverexposureRepairTab(ttk.Frame):
             raise ValueError("输入文件夹不存在。")
         if not str(cfg.output_dir):
             raise ValueError("请指定输出文件夹。")
-        if cfg.overwrite_original:
-            raise ValueError("GUI 交付版默认禁止覆盖原文件；请取消该选项。")
         if cfg.input_dir == cfg.output_dir and not cfg.suffix:
             raise ValueError("输入和输出文件夹相同时必须设置输出后缀。")
         return cfg
@@ -568,8 +552,6 @@ class OverexposureRepairTab(ttk.Frame):
         self.preserve_subfolders.set(cfg.preserve_subfolders)
         self.suffix.set(cfg.suffix)
         self.overwrite_output.set(cfg.overwrite_output)
-        self.overwrite_original.set(cfg.overwrite_original)
-        self.backup_before_overwrite.set(cfg.backup_before_overwrite)
         self.copy_unmodified.set(cfg.copy_unmodified)
         self.mode.set(cfg.mode)
         self.zero_value.set(str(cfg.zero_value))
@@ -645,6 +627,20 @@ class OverexposureRepairTab(ttk.Frame):
             messagebox.showerror("参数错误", str(exc))
             return
         if action == "repair" and not cfg.dry_run:
+            if not str(cfg.metadata.notes).strip():
+                messagebox.showerror(
+                    "缺少规则证据",
+                    "正式修复前，请在“项目元数据”的备注中说明：匹配值为何代表需替换的异常码，"
+                    "替换值来自哪份探测器、线站或采集软件证据。",
+                )
+                return
+            if not cfg.verify_after_write:
+                messagebox.showerror(
+                    "必须启用读回校验",
+                    "正式修复必须勾选“写出后重新读回逐像素校验”。"
+                    "如只需评估规则，请使用 Dry-run。",
+                )
+                return
             ok = messagebox.askyesno(
                 "确认开始修复",
                 "程序将写出新的 CBF 文件，并执行逐像素校验。\n\n"
@@ -737,6 +733,8 @@ class OverexposureRepairTab(ttk.Frame):
         self._poll_after_id = self.after(100, self._poll)
 
     def destroy(self):
+        if self.worker is not None and self.worker.is_alive():
+            self.cancel_event.set()
         if self._poll_after_id is not None:
             try:
                 self.after_cancel(self._poll_after_id)

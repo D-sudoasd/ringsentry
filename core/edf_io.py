@@ -52,6 +52,8 @@ def _edf_dtype_from_header(header: Dict[str, str]) -> np.dtype:
     dtype = np.dtype(dtype_map[data_type])
 
     byte_order = header.get('ByteOrder', 'LowByteFirst')
+    if byte_order not in {'LowByteFirst', 'HighByteFirst'}:
+        raise ValueError(f"Unsupported EDF ByteOrder: {byte_order}")
     if dtype.itemsize > 1:
         dtype = dtype.newbyteorder(
             '<' if byte_order == 'LowByteFirst' else '>'
@@ -86,10 +88,20 @@ def _choose_edf_data_offset(
     size matches so both old files and FabIO-generated EDF files are read
     correctly.
     """
-    candidates = []
-    if declared_header_size:
-        candidates.append(declared_header_size)
+    if declared_header_size is not None:
+        if declared_header_size < header_end_pos:
+            raise ValueError(
+                "EDF_HeaderSize/HeaderSize ends before the header closing "
+                "brace"
+            )
+        if declared_header_size + payload_size != file_size:
+            raise ValueError(
+                "EDF_HeaderSize/HeaderSize is inconsistent with the file "
+                "size and declared image payload"
+            )
+        return declared_header_size
 
+    candidates = []
     for block in (512, 1024):
         rounded = int(math.ceil(header_end_pos / block) * block)
         candidates.append(rounded)
@@ -107,14 +119,10 @@ def _choose_edf_data_offset(
         if value + payload_size == file_size:
             return value
 
-    inferred = file_size - payload_size
-    if inferred >= header_end_pos:
-        return inferred
-
-    if declared_header_size and declared_header_size >= header_end_pos:
-        return declared_header_size
-
-    return unique_candidates[0]
+    raise ValueError(
+        "EDF payload position is inconsistent with the declared image size; "
+        "trailing bytes or unsupported multiple images may be present"
+    )
 
 
 def read_edf(file: Path) -> np.ndarray:
@@ -139,24 +147,78 @@ def read_edf(file: Path) -> np.ndarray:
         if end_pos < 0:
             raise ValueError("Could not locate EDF header end.")
 
+        if not buf.lstrip().startswith(b'{'):
+            raise ValueError("EDF header must start with an opening brace.")
+
         header = _parse_edf_header_bytes(buf[:end_pos])
+        compression = header.get('Compression')
+        if compression is not None:
+            normalized_compression = re.sub(
+                r'[\s_-]+', ' ', compression.strip().lower()
+            )
+            uncompressed_values = {
+                '', 'none', 'no', 'no compression', 'not compressed',
+                'nocompression', 'notcompressed', 'raw', 'uncompressed',
+            }
+            if normalized_compression not in uncompressed_values:
+                raise ValueError(
+                    f"Unsupported EDF Compression: {compression}"
+                )
         dtype = _edf_dtype_from_header(header)
 
-        dim1 = int(header.get('Dim_1'))
-        dim2 = int(header.get('Dim_2'))
+        try:
+            dim1 = int(header.get('Dim_1'))
+            dim2 = int(header.get('Dim_2'))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("EDF dimensions Dim_1 and Dim_2 must be integers") from exc
+        if dim1 <= 0 or dim2 <= 0:
+            raise ValueError("EDF dimensions Dim_1 and Dim_2 must be positive")
         expected_payload_size = dim1 * dim2 * dtype.itemsize
-        size = _parse_positive_int(
-            header.get('EDF_BinarySize')
-        ) or _parse_positive_int(
-            header.get('Size')
-        ) or expected_payload_size
-        if size < expected_payload_size:
+        declared_binary_fields = [
+            (name, header[name])
+            for name in ('EDF_BinarySize', 'Size')
+            if name in header
+        ]
+        parsed_binary_sizes = []
+        for name, value in declared_binary_fields:
+            parsed = _parse_positive_int(value)
+            if parsed is None:
+                raise ValueError(
+                    f"{name} must be a positive integer"
+                )
+            parsed_binary_sizes.append(parsed)
+        if len(set(parsed_binary_sizes)) > 1:
             raise ValueError(
-                f"EDF payload too small for dimensions/dtype: "
-                f"expected at least {expected_payload_size} bytes, got {size}"
+                "EDF_BinarySize and Size declare conflicting payload sizes"
             )
+        declared_binary_size = (
+            parsed_binary_sizes[0] if parsed_binary_sizes else None
+        )
+        if declared_binary_size is not None and declared_binary_size != expected_payload_size:
+            raise ValueError(
+                "EDF declared binary size does not match dimensions/dtype: "
+                f"expected {expected_payload_size} bytes, got {declared_binary_size}"
+            )
+        size = expected_payload_size
 
-        declared_header_size = _parse_positive_int(header.get('EDF_HeaderSize'))
+        declared_header_fields = [
+            (name, header[name])
+            for name in ('EDF_HeaderSize', 'HeaderSize')
+            if name in header
+        ]
+        parsed_header_sizes = []
+        for name, value in declared_header_fields:
+            parsed = _parse_positive_int(value)
+            if parsed is None:
+                raise ValueError(f"{name} must be a positive integer")
+            parsed_header_sizes.append(parsed)
+        if len(set(parsed_header_sizes)) > 1:
+            raise ValueError(
+                "EDF_HeaderSize and HeaderSize declare conflicting offsets"
+            )
+        declared_header_size = (
+            parsed_header_sizes[0] if parsed_header_sizes else None
+        )
         file_size = Path(file).stat().st_size
         header_size = _choose_edf_data_offset(
             file_size=file_size,
@@ -274,7 +336,7 @@ def write_edf(
     reserved_keys = {
         'EDF_DataBlockID', 'EDF_BinarySize', 'EDF_HeaderSize',
         'ByteOrder', 'DataType', 'Dim_1', 'Dim_2', 'Image',
-        'HeaderID', 'Size',
+        'HeaderID', 'Size', 'Compression', 'HeaderSize',
     }
     if header_extra:
         for k, v in header_extra.items():

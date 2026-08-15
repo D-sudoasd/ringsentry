@@ -3,7 +3,7 @@
     {
       "name": "Gong, Delun",
       "orcid": "0000-0001-7877-7707",
-      "affiliation": "Institute of Metal Research (IMR), Chinese Academy of Sciences (CAS)",
+      "affiliation": "Institute of Metal Research, Chinese Academy of Sciences, Shenyang, People's Republic of China",
       "type": "ProjectMember"
     }
   ],
@@ -21,6 +21,7 @@
     "SXRD",
     "GIWAXS",
     "image preprocessing",
+    "diffraction detector",
     "materials science"
   ]
 }

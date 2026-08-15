@@ -4,6 +4,8 @@ Thank you for your interest in improving **RingSentry**.
 
 This repository is maintained as a research-oriented desktop application for 2D diffraction image preprocessing. Contributions are welcome, but they should prioritize reproducibility, correctness, and practical usability for scientific workflows.
 
+Participation is governed by the project [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## What to contribute
 
 Useful contributions include:
@@ -25,6 +27,10 @@ Please include:
 - traceback or log output when available
 - whether the problem is specific to one file or reproducible across files
 
+General usage questions also belong in GitHub Issues so that answers remain
+searchable. Do not upload private beamline data. Prefer a small synthetic
+reproducer or a legally shareable excerpt with identifying metadata removed.
+
 ## Before opening a pull request
 
 1. Start from the latest `main`.
@@ -43,13 +49,21 @@ Please include:
 
 ## Validation expectations
 
-Before submitting, check as many of the following as relevant:
+Create an isolated environment and install the maintained validation extra:
 
-- `python -m compileall main.py core gui tools`
-- main GUI starts correctly
-- preview and batch gallery still work
-- representative detector files still load
-- exports remain readable in the expected downstream tools
+```bash
+python -m pip install -e ".[test]"
+python -m pip check
+python -m ruff check .
+python -m pytest -q
+python examples/minimal_preprocessing.py --output-dir <temporary-directory>
+python -m build
+```
+
+For GUI changes, also verify that the main window starts, previews and the
+batch gallery work, and the affected export opens in its intended downstream
+tool. Record the platform and Python version. Generated outputs and build
+artifacts must remain outside the repository or match a precise ignore rule.
 
 ## Commit messages
 
@@ -62,3 +76,22 @@ Use short, factual messages. Good examples:
 ## Large or sensitive changes
 
 For substantial scientific changes, file-format support, or security-sensitive issues, please open an issue first so the intended behavior can be discussed before implementation.
+
+## Support and governance
+
+RingSentry is currently a single-maintainer project. Delun Gong is the
+maintainer and makes release decisions after considering numerical correctness,
+transparent data semantics, regression evidence, backward compatibility, and
+the needs documented in public issues. Support and review are provided on a
+best-effort basis; there is no guaranteed response time.
+
+Use:
+
+- GitHub Issues for reproducible bugs, general support, and focused proposals;
+- pull requests for reviewed code or documentation changes; and
+- the private path in `SECURITY.md` for vulnerabilities.
+
+Maintainer decisions that change scientific behavior should be documented in
+the changelog, tests, and relevant user/API documentation. Contributors who
+disagree with a decision are encouraged to present a minimal reproducer,
+domain evidence, and a backward-compatible alternative in the issue.

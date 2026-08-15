@@ -120,6 +120,12 @@ def apply_processing(
 ):
     """Apply the preprocessing pipeline to a 2D detector image.
 
+    ``flat_frame`` is a relative detector-response map. It must either already
+    be dark-subtracted (``flat_is_dark_subtracted=True``) or be accompanied by
+    the matching ``dark_frame``. The function does not normalize raw flat
+    counts automatically, so callers that require scale-preserving correction
+    must normalize the response map before calling this function.
+
     Order of operations:
     dark subtraction, flat correction, background offset, ROI, mask,
     intensity clipping, percentile clipping, negative clipping, hot-pixel
@@ -142,6 +148,10 @@ def apply_processing(
 
     # 2. Flat field correction.  Near-zero denominator is invalid.
     if flat_frame is not None:
+        if not flat_is_dark_subtracted and dark is None:
+            raise ValueError(
+                "flat_is_dark_subtracted=False 时必须同时提供匹配的暗场"
+            )
         flat = _as_2d_float32(flat_frame, "\u5E73\u573A")
         _require_same_shape(
             arr,

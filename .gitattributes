@@ -1,0 +1,4 @@
+*.pdf binary
+*.cmd text eol=crlf
+*.bat text eol=crlf
+paper/figures/*.svg whitespace=-trailing-space

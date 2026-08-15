@@ -41,17 +41,17 @@ For academic credit, the best setup is:
 4. The metadata also includes your **affiliation** if you want institutional visibility in citations and discovery systems.
 5. After publication, the DOI is imported into ORCID or allowed to sync automatically via DataCite.
 
-## Why `.zenodo.json` is the key next step
+## Why `.zenodo.json` is retained
 
-Right now the repository has a `CITATION.cff`, which is good for GitHub citation display.
+The repository contains both `CITATION.cff`, for citation metadata and GitHub's citation display, and `.zenodo.json`, for Zenodo-specific release metadata.
 
 For Zenodo archiving, however, `.zenodo.json` is the more precise file when you need stronger metadata control, because it supports Zenodo-specific fields and takes precedence over `CITATION.cff`.
 
 This is the file that should carry your real-name creator metadata for archival releases.
 
-## Recommended `.zenodo.json` structure
+## Current `.zenodo.json` structure
 
-Once your ORCID iD is available, add a root-level file named `.zenodo.json` like this:
+The root-level `.zenodo.json` currently records:
 
 ```json
 {
@@ -64,8 +64,8 @@ Once your ORCID iD is available, add a root-level file named `.zenodo.json` like
   "creators": [
     {
       "name": "Gong, Delun",
-      "orcid": "0000-0000-0000-0000",
-      "affiliation": "Your Institution",
+      "orcid": "0000-0001-7877-7707",
+      "affiliation": "Institute of Metal Research, Chinese Academy of Sciences, Shenyang, People's Republic of China",
       "type": "ProjectMember"
     }
   ],
@@ -80,7 +80,7 @@ Once your ORCID iD is available, add a root-level file named `.zenodo.json` like
 }
 ```
 
-Use your real ORCID iD and real affiliation. Do not publish placeholder values.
+These values agree with `CITATION.cff` and the JOSS paper draft. They should be confirmed by the author immediately before an archival release.
 
 ## Recommended release workflow
 
@@ -126,13 +126,16 @@ That combination is much stronger for authorship attribution, software citation,
 
 ## Current repository status
 
-The repository metadata can now be prepared as:
+The current source metadata identify:
 
 - creator name: `Delun Gong`
 - ORCID iD: `0000-0001-7877-7707`
-- affiliation: `Institute of Metal Research (IMR), Chinese Academy of Sciences (CAS)`
+- affiliation: `Institute of Metal Research, Chinese Academy of Sciences, Shenyang, People's Republic of China`
+- source version: `7.0.0`
+- latest public tag and version archive: `v6.0.1`
+- concept DOI: `10.5281/zenodo.19602728`
 
-The recommended next repository step is to keep `.zenodo.json` and `CITATION.cff` aligned before the next archival release.
+The account-linking and repository-enablement state cannot be inferred from local files. Before the next archival release, confirm those external settings and keep `.zenodo.json`, `CITATION.cff`, the tag, the release, and the archived source version aligned.
 
 ## What to do next in practice
 

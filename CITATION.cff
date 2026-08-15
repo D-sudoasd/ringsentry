@@ -5,7 +5,7 @@ type: software
 authors:
   - given-names: "Delun"
     family-names: "Gong"
-    affiliation: "Institute of Metal Research (IMR), Chinese Academy of Sciences (CAS)"
+    affiliation: "Institute of Metal Research, Chinese Academy of Sciences, Shenyang, People's Republic of China"
     orcid: "https://orcid.org/0000-0001-7877-7707"
 repository-code: "https://github.com/D-sudoasd/ringsentry"
 url: "https://github.com/D-sudoasd/ringsentry"
@@ -16,10 +16,9 @@ identifiers:
 abstract: >-
   RingSentry is desktop GUI software for reproducible preprocessing and quality
   control of 2D diffraction detector images, including SAXS, WAXS, SXRD, and
-  GIWAXS workflows, with multi-format I/O, calibration, preview, geometry
-  transforms, intensity processing, reports, and Q conversion tools.
+  GIWAXS workflows, with multi-format I/O, dark/flat correction, preview,
+  geometry transforms, intensity processing, reports, and Q conversion tools.
 version: "7.0.0"
-date-released: 2026-05-28
 license: MIT
 keywords:
   - 2D diffraction
@@ -29,3 +28,4 @@ keywords:
   - GIWAXS
   - image preprocessing
   - diffraction detector
+  - materials science

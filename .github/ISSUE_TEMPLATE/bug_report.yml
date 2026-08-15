@@ -42,7 +42,9 @@ body:
     id: version
     attributes:
       label: Software version
-      placeholder: "v6.0.1"
+      placeholder: "v7.0.0 or an exact Git commit"
+    validations:
+      required: true
   - type: dropdown
     id: format
     attributes:
@@ -54,9 +56,14 @@ body:
         - HDF5/NeXus
         - ADSC/Bruker/FabIO format
         - Other
+    validations:
+      required: true
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: Python version, Windows version, and how you launched the app.
+      description: Operating system and version, Python version, and how you launched the app.
+      placeholder: "For example: Ubuntu 24.04, Python 3.12.4, launched with `ringsentry`"
+    validations:
+      required: true
 

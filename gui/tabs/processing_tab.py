@@ -282,6 +282,10 @@ class ProcessingTab(ttk.Frame):
             return
         try:
             self.app.dark_frame = load_image(Path(f), self.app.io_tab.h5_path_var.get())
+            self.app.dark_frame_provenance = {
+                "mode": "single",
+                "files": [str(Path(f).resolve())],
+            }
             self.dark_frame_var.set(f)
             self.app.log(
                 f"\u5DF2\u52A0\u8F7D\u6697\u5E27: {f} (\u5C3A\u5BF8: {self.app.dark_frame.shape})"
@@ -291,10 +295,12 @@ class ProcessingTab(ttk.Frame):
                 "\u52A0\u8F7D\u6697\u5E27\u5931\u8D25", str(e)
             )
             self.app.dark_frame = None
+            self.app.dark_frame_provenance = None
             self.dark_frame_var.set("\u65E0\uFF08\u70B9\u51FB\u6D4F\u89C8\u9009\u62E9\uFF09")
 
     def _clear_dark_frame(self):
         self.app.dark_frame = None
+        self.app.dark_frame_provenance = None
         self.dark_frame_var.set("\u65E0\uFF08\u70B9\u51FB\u6D4F\u89C8\u9009\u62E9\uFF09")
         self.app.log("\u5DF2\u6E05\u7A7A\u6697\u5E27")
 
@@ -336,6 +342,10 @@ class ProcessingTab(ttk.Frame):
             return
         try:
             self.app.flat_frame = load_image(Path(f), self.app.io_tab.h5_path_var.get())
+            self.app.flat_frame_provenance = {
+                "mode": "single",
+                "files": [str(Path(f).resolve())],
+            }
             self.flat_frame_var.set(f)
             self.app.log(
                 f"\u5DF2\u52A0\u8F7D\u5E73\u573A: {f} (\u5C3A\u5BF8: {self.app.flat_frame.shape})"
@@ -345,10 +355,12 @@ class ProcessingTab(ttk.Frame):
                 "\u52A0\u8F7D\u5E73\u573A\u5931\u8D25", str(e)
             )
             self.app.flat_frame = None
+            self.app.flat_frame_provenance = None
             self.flat_frame_var.set("\u65E0\uFF08\u70B9\u51FB\u6D4F\u89C8\u9009\u62E9\uFF09")
 
     def _clear_flat_frame(self):
         self.app.flat_frame = None
+        self.app.flat_frame_provenance = None
         self.flat_frame_var.set("\u65E0\uFF08\u70B9\u51FB\u6D4F\u89C8\u9009\u62E9\uFF09")
         self.app.log("\u5DF2\u6E05\u7A7A\u5E73\u573A")
 

@@ -2,6 +2,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -13,6 +14,17 @@ try:
 except Exception:  # pragma: no cover - tkinter may be unavailable in some envs
     tk = None
     messagebox = None
+
+
+class _StubVar:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
 
 
 class GuiResilienceTests(unittest.TestCase):
@@ -199,6 +211,38 @@ class GuiResilienceTests(unittest.TestCase):
         finally:
             app.destroy()
 
+    def test_close_requests_safe_stop_before_destroying_active_cbf_worker(self):
+        app = self._create_app()
+        try:
+            tab = app.overexposure_tab
+            tab.worker = type("ActiveWorker", (), {"is_alive": lambda _self: True})()
+            stop_calls = []
+            tab.stop = lambda: stop_calls.append(True)
+            destroy_calls = []
+            app.destroy = lambda: destroy_calls.append(True)
+            self._orig_messagebox["askyesno"] = messagebox.askyesno
+            messagebox.askyesno = lambda *_args, **_kwargs: True
+
+            app._on_close()
+
+            self.assertEqual(stop_calls, [True])
+            self.assertEqual(destroy_calls, [])
+        finally:
+            app.destroy = tk.Tk.destroy.__get__(app, type(app))
+            app.destroy()
+
+    def test_overexposure_tab_destroy_sets_cancel_event_for_active_worker(self):
+        app = self._create_app()
+        try:
+            tab = app.overexposure_tab
+            tab.worker = type("ActiveWorker", (), {"is_alive": lambda _self: True})()
+
+            tab.destroy()
+
+            self.assertTrue(tab.cancel_event.is_set())
+        finally:
+            app.destroy()
+
     def test_output_tab_has_png_options_default_off(self):
         with tempfile.TemporaryDirectory(prefix="gui_default_config_") as tmp:
             config_path = str(Path(tmp) / "config.json")
@@ -236,6 +280,125 @@ class GuiResilienceTests(unittest.TestCase):
             finally:
                 app.destroy()
 
+    def test_preview_applies_selected_workflow_preset_before_rendering(self):
+        from gui.app import App
+
+        app = SimpleNamespace(
+            io_tab=SimpleNamespace(workflow_preset_var=_StubVar("SAXS Quick")),
+            processing_tab=SimpleNamespace(
+                clip_negative_var=_StubVar(True),
+                mask_nonzero_is_invalid_var=_StubVar(False),
+                bg_offset_var=_StubVar(17.0),
+                min_intensity_var=_StubVar("5"),
+                max_intensity_var=_StubVar("9"),
+            ),
+            geometry_tab=SimpleNamespace(
+                rotate_var=_StubVar("90"),
+                flip_x_var=_StubVar(True),
+                flip_y_var=_StubVar(True),
+                bin_factor_var=_StubVar(4),
+                norm_mode_var=_StubVar("max"),
+                pclip_low_var=_StubVar("1"),
+                pclip_high_var=_StubVar("99"),
+                intensity_transform_var=_StubVar("log1p"),
+                gamma_var=_StubVar(0.5),
+                hot_pixel_enable_var=_StubVar(True),
+                hot_pixel_window_var=_StubVar(5),
+                hot_pixel_sigma_var=_StubVar(3.0),
+            ),
+            output_tab=SimpleNamespace(
+                format_vars={
+                    name: _StubVar(name == "csv")
+                    for name in ("tif", "npy", "csv", "dat", "xycsv", "xydat")
+                },
+                xy_skip_zeros=_StubVar(False),
+                xy_zero_tol=_StubVar(2.0),
+            ),
+            log=lambda _message: None,
+        )
+        app._apply_workflow_preset = lambda: App._apply_workflow_preset(app)
+
+        with patch("gui.app.show_preview") as render_preview:
+            App.preview_image(app)
+
+        render_preview.assert_called_once_with(app)
+        self.assertEqual(app.processing_tab.bg_offset_var.get(), 0.0)
+        self.assertEqual(app.processing_tab.min_intensity_var.get(), "")
+        self.assertEqual(app.processing_tab.max_intensity_var.get(), "")
+        self.assertEqual(app.geometry_tab.rotate_var.get(), "0")
+        self.assertFalse(app.geometry_tab.flip_x_var.get())
+        self.assertTrue(app.output_tab.format_vars["tif"].get())
+        self.assertTrue(app.output_tab.format_vars["npy"].get())
+        self.assertFalse(app.output_tab.format_vars["csv"].get())
+
+    def test_preview_rejects_invalid_png_options_before_rendering(self):
+        from gui.preview import show_preview
+
+        app = SimpleNamespace(
+            filelist=[(Path("sample.tif"), Path("sample.tif"))],
+            output_tab=SimpleNamespace(
+                format_vars={"png": _StubVar(True)},
+                png_scale_var=_StubVar("linear"),
+                png_min_var=_StubVar(""),
+                png_max_var=_StubVar("100"),
+                png_colormap_var=_StubVar("viridis"),
+                png_dpi_var=_StubVar(300),
+            ),
+        )
+
+        with patch("gui.preview._lazy_import_matplotlib") as lazy_import:
+            show_preview(app)
+
+        lazy_import.assert_not_called()
+        self.assertTrue(
+            any(
+                m["kind"] == "error"
+                and m["title"] == "设置无效"
+                and "PNG I Min" in m["message"]
+                for m in self.messages
+            ),
+            self.messages,
+        )
+
+    def test_preview_rejects_invalid_or_out_of_bounds_roi(self):
+        from gui.preview import show_preview
+
+        for roi_text in ("1,2,3", "-1,0,2,2", "8,8,3,3"):
+            with self.subTest(roi=roi_text):
+                self.messages.clear()
+                app = SimpleNamespace(
+                    filelist=[(Path("sample.tif"), Path("sample.tif"))],
+                    io_tab=SimpleNamespace(h5_path_var=_StubVar("")),
+                    output_tab=SimpleNamespace(
+                        format_vars={"png": _StubVar(False)},
+                    ),
+                    processing_tab=SimpleNamespace(roi_var=_StubVar(roi_text)),
+                )
+                with patch(
+                    "gui.preview.load_image",
+                    return_value=np.zeros((10, 10), dtype=np.float32),
+                ):
+                    with patch(
+                        "gui.preview._lazy_import_matplotlib"
+                    ) as lazy_import:
+                        with patch("gui.preview.apply_matplotlib_style"):
+                            show_preview(app)
+
+                lazy_import.assert_not_called()
+                self.assertTrue(
+                    any(
+                        m["kind"] == "error"
+                        and m["title"] == "设置无效"
+                        and "ROI" in m["message"]
+                        for m in self.messages
+                    ),
+                    self.messages,
+                )
+                self.assertFalse(
+                    any(m["kind"] == "warning" for m in self.messages),
+                    self.messages,
+                )
+
     def test_png_options_are_saved_and_loaded_from_config(self):
         with tempfile.TemporaryDirectory(prefix="gui_png_config_") as tmp:
             config_path = str(Path(tmp) / "config.json")
@@ -272,6 +435,32 @@ class GuiResilienceTests(unittest.TestCase):
         roi = _roi_from_drag_points((8.8, 2.2), (3.1, 6.9))
 
         self.assertEqual(roi, (3, 2, 5, 4))
+
+    def test_preview_final_array_matches_full_batch_pipeline(self):
+        from core.processing import apply_processing
+        from gui.preview import _preview_processing_arrays
+
+        arr = np.arange(1, 37, dtype=np.float32).reshape(6, 6)
+        options = {
+            "roi": (1, 0, 4, 6),
+            "bg_offset": 2.0,
+            "clip_negative": True,
+            "pclip_low": 10.0,
+            "pclip_high": 90.0,
+            "rotate_deg": "90",
+            "flip_x": True,
+            "bin_factor": 2,
+            "intensity_transform": "log1p",
+            "gamma": 0.8,
+            "norm_mode": "minmax",
+        }
+
+        coordinate, final = _preview_processing_arrays(arr, **options)
+        expected = apply_processing(arr, **options)
+
+        self.assertEqual(coordinate.shape, arr.shape)
+        np.testing.assert_array_equal(final, expected)
+        self.assertEqual(final.shape, (2, 3))
 
     def test_overexposure_numeric_validation_uses_field_labels(self):
         with tempfile.TemporaryDirectory(prefix="gui_zero2sat_bad_input_") as tmp:

@@ -111,14 +111,12 @@ def is_supported_input_file(path: Path) -> bool:
 def _normalize_loaded_array(arr: np.ndarray, file: Path) -> np.ndarray:
     """Ensure the loaded array is 2D.
 
-    Handles common multi-dimensional patterns from synchrotron detectors:
+    Handles unambiguous singleton-axis patterns from synchrotron detectors:
     - (1, H, W): squeeze leading singleton frame axis
-    - (N, H, W): take the first frame when the leading axis is the smallest
     - (H, W, 1): squeeze trailing singleton channel axis
-    - (H, W, N): take the first channel when the trailing axis is the smallest
 
-    Ambiguous 3D layouts and arrays with more than 3 dimensions are rejected
-    instead of silently slicing the wrong axis.
+    Non-singleton 3D layouts and arrays with more than 3 dimensions are
+    rejected instead of silently selecting a frame or channel.
     """
     arr = np.asarray(arr)
     if arr.ndim == 2:
@@ -141,22 +139,10 @@ def _normalize_loaded_array(arr: np.ndarray, file: Path) -> np.ndarray:
                 "squeezing trailing singleton channel axis"
             )
             arr = arr[..., 0]
-        elif s0 < s1 and s0 < s2:
-            logger.warning(
-                f"{file.name}: loaded 3D array shape={arr.shape}, "
-                "assuming (N, H, W) layout and using the first frame"
-            )
-            arr = arr[0]
-        elif s2 < s0 and s2 < s1:
-            logger.warning(
-                f"{file.name}: loaded 3D array shape={arr.shape}, "
-                "assuming (H, W, N) layout and using the first channel"
-            )
-            arr = arr[..., 0]
         else:
             raise ValueError(
-                f"{file.name}: \u65E0\u6CD5\u786E\u5B9A 3D \u6570\u7EC4 shape={arr.shape} "
-                "\u7684\u56FE\u50CF\u8F74\u987A\u5E8F"
+                f"{file.name}: 3D \u6570\u7EC4 shape={arr.shape} \u5305\u542B\u591A\u4E2A\u5E27\u6216\u901A\u9053\uFF0C"
+                "\u8BF7\u5148\u663E\u5F0F\u9009\u62E9\u5355\u4E2A 2D \u6570\u636E\u96C6/\u5E27"
             )
     elif arr.ndim > 3:
         raise ValueError(
@@ -253,11 +239,7 @@ def load_image_with_info(
             iio = _lazy_import_imageio()
             arr = iio.imread(file)
     elif kind == 'edf':
-        try:
-            arr = read_edf(file)
-        except Exception:
-            arr, fabio_meta = _load_with_fabio(file)
-            metadata.update(fabio_meta)
+        arr = read_edf(file)
     elif kind == 'hdf5':
         arr = _load_hdf5_dataset(file, h5_path)
     elif kind == 'cbf':

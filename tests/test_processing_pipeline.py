@@ -30,6 +30,17 @@ class ProcessingPipelineTests(unittest.TestCase):
         expected = (raw - dark) / (flat - dark)
         self.assertTrue(np.allclose(out, expected))
 
+    def test_raw_flat_without_matching_dark_is_rejected(self):
+        raw = np.array([[10, 20]], dtype=np.float32)
+        flat = np.array([[2, 4]], dtype=np.float32)
+
+        with self.assertRaisesRegex(ValueError, "必须同时提供匹配的暗场"):
+            apply_processing(
+                raw,
+                flat_frame=flat,
+                flat_is_dark_subtracted=False,
+            )
+
     def test_flat_near_zero_denominator_becomes_nan(self):
         raw = np.array([[10, 20]], dtype=np.float32)
         flat = np.array([[0, 5]], dtype=np.float32)

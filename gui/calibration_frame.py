@@ -98,6 +98,7 @@ class CalibrationManagerDialog(tk.Toplevel):
         opt_frame.pack(fill="x", padx=10, pady=5)
 
         self.average_method_var = tk.StringVar(value="mean")
+        self.average_method_var.trace_add("write", self._invalidate_average)
         ttk.Radiobutton(
             opt_frame, text="\u5747\u503C (Mean)",
             variable=self.average_method_var, value="mean",
@@ -149,6 +150,7 @@ class CalibrationManagerDialog(tk.Toplevel):
                 ("\u6240\u6709\u6587\u4EF6", "*.*"),
             ],
         )
+        changed = False
         for f in files:
             if f in self._file_paths:
                 continue
@@ -161,11 +163,14 @@ class CalibrationManagerDialog(tk.Toplevel):
                 self.file_listbox.insert(
                     "end", f"{Path(f).name} ({arr.shape})"
                 )
+                changed = True
             except Exception as e:
                 messagebox.showerror(
                     "\u52A0\u8F7D\u5931\u8D25",
                     f"{Path(f).name}: {e}",
                 )
+        if changed:
+            self._invalidate_average()
 
     def _remove_selected(self):
         selection = list(self.file_listbox.curselection())
@@ -173,6 +178,14 @@ class CalibrationManagerDialog(tk.Toplevel):
             self.file_listbox.delete(idx)
             del self._file_paths[idx]
             del self._arrays[idx]
+        if selection:
+            self._invalidate_average()
+
+    def _invalidate_average(self, *_args):
+        """Discard a result whenever its files or combination method change."""
+        self._averaged = None
+        if hasattr(self, "stats_var"):
+            self.stats_var.set("尚未计算")
 
     def _clear_all(self):
         self.file_listbox.delete(0, "end")
@@ -267,6 +280,13 @@ class CalibrationManagerDialog(tk.Toplevel):
 
         if self.frame_type == "dark":
             self.app.dark_frame = self._averaged
+            self.app.dark_frame_provenance = {
+                "mode": "combined",
+                "method": method,
+                "files": [
+                    str(Path(path).resolve()) for path in self._file_paths
+                ],
+            }
             self.app.processing_tab.dark_frame_var.set(
                 f"{n} \u5E27\u5408\u5E76 ({method})"
             )
@@ -276,6 +296,13 @@ class CalibrationManagerDialog(tk.Toplevel):
             )
         else:
             self.app.flat_frame = self._averaged
+            self.app.flat_frame_provenance = {
+                "mode": "combined",
+                "method": method,
+                "files": [
+                    str(Path(path).resolve()) for path in self._file_paths
+                ],
+            }
             self.app.processing_tab.flat_frame_var.set(
                 f"{n} \u5E27\u5408\u5E76 ({method})"
             )

@@ -21,27 +21,45 @@ def _lazy_import_tifffile():
     return tifffile
 
 
-def _export_array_for_matrix(arr: np.ndarray, preserve_dtype: bool) -> np.ndarray:
-    """Prepare array for matrix export, handling NaN/Inf values.
+def _nonfinite_replacement_note(arr: np.ndarray, fmt: str) -> Optional[str]:
+    """Describe non-finite values replaced by a text matrix export."""
+    nan_count = int(np.count_nonzero(np.isnan(arr)))
+    posinf_count = int(np.count_nonzero(np.isposinf(arr)))
+    neginf_count = int(np.count_nonzero(np.isneginf(arr)))
+    nonfinite_count = nan_count + posinf_count + neginf_count
+    if not nonfinite_count:
+        return None
+    return (
+        f"{fmt.upper()} compatibility export: replaced {nonfinite_count} "
+        "non-finite values with 0.0 "
+        f"(NaN={nan_count}, +Inf={posinf_count}, -Inf={neginf_count})"
+    )
 
-    NaN and Inf values are replaced with 0.0 for compatibility with formats
-    that cannot represent them (TIFF, CSV, DAT).  A warning is logged if
-    Inf values are found, as this may indicate data issues.
+
+def _export_array_for_matrix(
+    arr: np.ndarray,
+    preserve_dtype: bool,
+    fmt: str,
+) -> np.ndarray:
+    """Prepare an array according to the target matrix format.
+
+    Floating-point NPY, EDF, and TIFF payloads retain IEEE NaN and Inf values.
+    Text matrix formats replace non-finite values with 0.0 for compatibility
+    and log the exact replacement counts.
     """
     arr = np.asarray(arr)
-    has_inf = np.any(np.isinf(arr))
-    if has_inf:
-        import logging
-        n_inf = int(np.count_nonzero(np.isinf(arr)))
-        logging.getLogger(__name__).warning(
-            f"Export: {n_inf} Inf values found, replaced with 0.0"
-        )
-    if preserve_dtype:
-        if np.issubdtype(arr.dtype, np.floating):
-            return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-        return arr
+    export_arr = arr if preserve_dtype else arr.astype(np.float32, copy=False)
+    if fmt in ('npy', 'edf', 'tif'):
+        return export_arr
+
+    note = _nonfinite_replacement_note(export_arr, fmt)
+    if note:
+        logger.warning(note)
     return np.nan_to_num(
-        arr.astype(np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0
+        export_arr,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
     )
 
 
@@ -71,7 +89,9 @@ def _prepare_tiff_array(
     """
     arr = np.asarray(arr)
     meta = dict(metadata or {})
-    source_kind = str(meta.get("OriginalKind", "")).lower()
+    source_kind = str(
+        meta.get("OriginalKind") or meta.get("source_kind") or ""
+    ).lower()
     note = None
 
     if preserve_dtype and source_kind == "cbf" and not _tiff_imagej_supported_dtype(arr.dtype):
@@ -170,7 +190,16 @@ def _save_matrix(
     metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Save 2D array as a matrix file (EDF/TIFF/NPY/DAT/CSV)."""
-    arr = _export_array_for_matrix(arr, preserve_dtype=preserve_dtype)
+    replacement_note = None
+    source_arr = np.asarray(arr)
+    if fmt in ('dat', 'csv'):
+        export_source = source_arr if preserve_dtype else source_arr.astype(np.float32, copy=False)
+        replacement_note = _nonfinite_replacement_note(export_source, fmt)
+    arr = _export_array_for_matrix(
+        arr,
+        preserve_dtype=preserve_dtype,
+        fmt=fmt,
+    )
 
     if fmt == 'edf':
         write_edf(arr, out_path, header_extra=metadata)
@@ -195,13 +224,13 @@ def _save_matrix(
             delimiter='\t',
             encoding='utf-8',
         )
-        return "OK"
+        return replacement_note or "OK"
     elif fmt == 'csv':
         # Bug Fix: added encoding='utf-8'
         pd.DataFrame(np.asarray(arr, dtype=np.float64)).to_csv(
             str(out_path), index=False, header=False, encoding='utf-8'
         )
-        return "OK"
+        return replacement_note or "OK"
     else:
         raise ValueError('\u4E0D\u652F\u6301\u7684\u77E9\u9635\u8F93\u51FA\u683C\u5F0F: ' + str(fmt))
 

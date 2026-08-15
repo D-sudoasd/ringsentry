@@ -2,21 +2,83 @@
 
 All notable changes to RingSentry.
 
-## [v7.0.0] - 2026-05-28
+## [Unreleased]
+
+The source tree identifies itself as `7.0.0`, but the changes in this section
+have not yet been assigned a public release date, Git tag, GitHub Release, or
+version-specific Zenodo archive. On release day, change this heading to
+`[v7.0.0]` and add the actual publication date only after those records exist.
+
+### Scientific-safety clarifications
+
+- Reject non-singleton three-dimensional detector stacks instead of silently
+  selecting the first frame or channel; singleton axes remain supported.
+- Default the CBF exceptional-value tool to dry-run and require recorded rule
+  provenance, a separate output copy, and read-back validation before a formal
+  GUI repair writes files. Original overwrite is rejected by both GUI and core;
+  unverified output remains an explicit programmatic escape hatch.
+- Bind CBF validation-index evidence to original and output SHA-256 digests,
+  reject data-type changes during strict verification, and disable automatic
+  original-file removal in favor of report-only cleanup candidates.
+- Make duplicate-name CBF detection report-only instead of moving source files
+  into a quarantine directory automatically.
+- Reject symbolic-link or Windows reparse-point path escapes during CBF scans
+  and output writes; copy unchanged files through private same-volume temporary
+  files and retain existing auto-output files instead of bulk-deleting them.
+- Reject malformed, compressed, or internally inconsistent EDF inputs rather
+  than guessing header offsets or silently interpreting compressed payloads.
+- Document that flat correction expects a relative detector-response map and
+  distinguish implemented detector-reader routes from fixture-tested paths.
+
+### Added
+
+- JOSS paper sources, verified references, and editable software figures.
+- GitHub Actions workflows defining Windows/Linux tests, static checks, package
+  builds, and JOSS draft PDF generation.
+- A deterministic synthetic end-to-end example with machine-readable
+  provenance and regression coverage.
+- User and core API documentation for installation, processing semantics,
+  formats, safety boundaries, support, and governance.
+- A contributor covenant, repository-local documentation-link checks, and
+  submission metadata consistency tests.
 
 ### Changed
 
-- Renamed the project from **2D Diffraction Ring Preprocessor** to **RingSentry**.
-- Updated the project subtitle to **reproducible preprocessing and QC for 2D diffraction detector images**.
-- Updated package metadata, citation metadata, Zenodo metadata, repository links, and runtime software identifiers for the RingSentry brand.
-- Renamed Windows startup scripts to `START_RingSentry.cmd` and `双击启动_RingSentry.cmd`.
-- Added the `ringsentry` GUI entry point while retaining `2d-image-processor` for command-line compatibility.
+- Renamed the project from **2D Diffraction Ring Preprocessor** to
+  **RingSentry**, aligned package/citation/Zenodo metadata and runtime software
+  identifiers, and added the `ringsentry` console entry point while retaining
+  `2d-image-processor` for command-line compatibility.
+- Renamed the Windows launchers to `START_RingSentry.cmd` and
+  `双击启动_RingSentry.cmd`.
+- Made project installation, reviewer validation, release state, and the
+  distinction between quantitative matrices and display exports explicit.
+- Documented that repository fixtures exercise TIFF, while MCCD/MARCCD use the
+  implemented TIFF-family route without dedicated fixtures.
+- Aligned issue and pull-request templates with the current source version and
+  maintained validation commands.
+- Pinned third-party GitHub Actions to reviewed commit SHAs while retaining
+  their human-readable release labels.
+- Marked PDF figure assets as binary in Git to prevent line-ending conversion
+  and make review patches reproducible across platforms.
 
-### DOI notes
+### Fixed
 
-- The Zenodo concept DOI remains `10.5281/zenodo.19602728`.
-- The `v7.0.0` version DOI is pending until the GitHub release is archived by Zenodo.
-- The old `v6.0.1` version DOI `10.5281/zenodo.19602729` remains a historical release DOI and is not reused for `v7.0.0`.
+- Preserved IEEE `NaN` and infinities in floating NPY, EDF, and TIFF exports;
+  CSV/DAT compatibility replacement now logs per-category counts.
+- Expanded run reports with input files, worker count, preset, overwrite,
+  lossless-matrix, XY, flat-field convention, and calibration-source details.
+- Propagated CSV/DAT non-finite replacement counts into worker messages so the
+  GUI run report retains them; XY option provenance is recorded by the run
+  report rather than guaranteed inside every text data file.
+- Recorded multi-frame dark/flat aggregation choices and source files in run
+  reports, with regression coverage through the real calibration-dialog path.
+- Identified CBF repair outputs as RingSentry 7.0.0 and the specific
+  overexposure-repair component while preserving the legacy
+  `app_name` and `app_version` fields for downstream compatibility.
+- Made GUI-dependent report tests skip cleanly when a minimal Python runtime
+  has no Tk installation, instead of failing during test collection.
+- Applied non-custom workflow presets before preview and made invalid PNG or
+  ROI settings stop preview just as they stop the batch run.
 
 ---
 2D 衍射环预处理工具的所有重要变更。

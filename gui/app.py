@@ -59,6 +59,8 @@ class App(tk.Tk):
         self.dark_frame = None
         self.flat_frame = None
         self.mask_frame = None
+        self.dark_frame_provenance = None
+        self.flat_frame_provenance = None
         self.cancellation_event = threading.Event()
         self.thread_pool = None
         self.is_running = False
@@ -73,6 +75,7 @@ class App(tk.Tk):
             "skipped": 0, "cancelled": 0,
         }
         self.start_time = None
+        self.last_max_workers = None
         self.last_quality_reports = []
 
         self._create_widgets()
@@ -218,6 +221,9 @@ class App(tk.Tk):
 
     # --- Preview ---
     def preview_image(self):
+        preset = self.io_tab.workflow_preset_var.get()
+        if preset != "Custom":
+            self._apply_workflow_preset()
         show_preview(self)
 
     def show_gallery(self):
@@ -633,6 +639,7 @@ class App(tk.Tk):
             max_workers = int(self.log_panel.max_thr_var.get())
             if max_workers < 1 or max_workers > 64:
                 raise ValueError("线程数必须在 1-64 之间")
+            self.last_max_workers = max_workers
             roi = parse_roi_text(self.processing_tab.roi_var.get())
             min_i = parse_optional_float(self.processing_tab.min_intensity_var.get())
             max_i = parse_optional_float(self.processing_tab.max_intensity_var.get())
@@ -920,9 +927,25 @@ class App(tk.Tk):
             f"{APP_TITLE} {APP_VERSION}",
             f"Timestamp: {datetime.now().isoformat(timespec='seconds')}",
             f"Input Mode: {self.io_tab.input_mode_var.get()}",
+            f"Input Directory: {self.io_tab.dir_var.get() or '<not used>'}",
             f"Input Count: {len(self.filelist)}",
             f"Output: {outroot}",
             f"Formats: {', '.join(formats)}",
+            (
+                "Max Workers: "
+                f"{self.last_max_workers if self.last_max_workers is not None else '<not recorded>'}"
+            ),
+            f"Workflow Preset: {self.io_tab.workflow_preset_var.get()}",
+            f"Overwrite Existing: {self.output_tab.overwrite_var.get()}",
+            f"Lossless Matrix Requested: {self.output_tab.lossless_matrix_var.get()}",
+            (
+                "XY Export: "
+                f"header={self.output_tab.xy_header.get()}, "
+                f"one_based={self.output_tab.xy_one_based.get()}, "
+                f"skip_zeros={self.output_tab.xy_skip_zeros.get()}, "
+                f"zero_tol={self.output_tab.xy_zero_tol.get()}, "
+                f"y_axis_origin={self.output_tab.xy_y_axis_origin_var.get()}"
+            ),
             (
                 "PNG Display: "
                 f"scale={self.output_tab.png_scale_var.get()}, "
@@ -943,7 +966,23 @@ class App(tk.Tk):
             f"HDF5 Path: {self.io_tab.h5_path_var.get()}",
             f"ROI: {self.processing_tab.roi_var.get() or '<none>'}",
             f"Dark Frame: {self.processing_tab.dark_frame_var.get()}",
+            "Dark Frame Provenance: "
+            + json.dumps(
+                getattr(self, "dark_frame_provenance", None),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
             f"Flat Frame: {self.processing_tab.flat_frame_var.get()}",
+            "Flat Frame Provenance: "
+            + json.dumps(
+                getattr(self, "flat_frame_provenance", None),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            (
+                "Flat Already Dark-subtracted: "
+                f"{self.processing_tab.flat_is_dark_subtracted_var.get()}"
+            ),
             f"Mask Frame: {self.processing_tab.mask_frame_var.get()}",
             f"Mask Nonzero Invalid: {self.processing_tab.mask_nonzero_is_invalid_var.get()}",
             f"Clip Negative: {self.processing_tab.clip_negative_var.get()}",
@@ -976,6 +1015,16 @@ class App(tk.Tk):
                     )
         else:
             lines.append("<no preflight QC sample recorded>")
+
+        lines.extend([
+            "",
+            "---- Input Files ----",
+        ])
+        if self.filelist:
+            for file_path, relative_path in self.filelist:
+                lines.append(f"{Path(file_path)} | relative={relative_path}")
+        else:
+            lines.append("<none recorded>")
 
         lines.extend([
             "",
@@ -1104,13 +1153,19 @@ class App(tk.Tk):
                     self.dark_frame = load_image(
                         Path(dark_path), io.h5_path_var.get()
                     )
+                    self.dark_frame_provenance = {
+                        "mode": "single",
+                        "files": [str(Path(dark_path).resolve())],
+                    }
                     p.dark_frame_var.set(dark_path)
                 except Exception as e:
                     self.dark_frame = None
+                    self.dark_frame_provenance = None
                     p.dark_frame_var.set("\u65E0\uFF08\u70B9\u51FB\u6D4F\u89C8\u9009\u62E9\uFF09")
                     self.log(f"\u65E0\u6CD5\u6062\u590D\u6697\u5E27: {e}")
             else:
                 self.dark_frame = None
+                self.dark_frame_provenance = None
 
             # Flat frame
             flat_path = config.get('flat_frame_path', '')
@@ -1119,13 +1174,19 @@ class App(tk.Tk):
                     self.flat_frame = load_image(
                         Path(flat_path), io.h5_path_var.get()
                     )
+                    self.flat_frame_provenance = {
+                        "mode": "single",
+                        "files": [str(Path(flat_path).resolve())],
+                    }
                     p.flat_frame_var.set(flat_path)
                 except Exception as e:
                     self.flat_frame = None
+                    self.flat_frame_provenance = None
                     p.flat_frame_var.set("\u65E0\uFF08\u70B9\u51FB\u6D4F\u89C8\u9009\u62E9\uFF09")
                     self.log(f"\u65E0\u6CD5\u6062\u590D\u5E73\u573A: {e}")
             else:
                 self.flat_frame = None
+                self.flat_frame_provenance = None
             p.flat_is_dark_subtracted_var.set(
                 config.get('flat_is_dark_subtracted', True)
             )
@@ -1261,6 +1322,18 @@ class App(tk.Tk):
             pass
 
     def _on_close(self):
+        overexposure_worker = getattr(
+            getattr(self, "overexposure_tab", None), "worker", None
+        )
+        if overexposure_worker is not None and overexposure_worker.is_alive():
+            if messagebox.askyesno(
+                "退出",
+                "CBF 修复或扫描仍在运行。是否请求安全停止？\n\n"
+                "为避免写坏文件，当前文件会先完成写入和读回校验；"
+                "窗口将在任务停止后才能关闭。",
+            ):
+                self.overexposure_tab.stop()
+            return
         if self.thread_pool:
             if messagebox.askyesno(
                 "\u9000\u51FA",
@@ -1276,5 +1349,14 @@ class App(tk.Tk):
         self.destroy()
 
     def destroy(self):
+        overexposure_worker = getattr(
+            getattr(self, "overexposure_tab", None), "worker", None
+        )
+        if overexposure_worker is not None and overexposure_worker.is_alive():
+            # Destruction may already have removed the tab's Tk widgets, so
+            # signal the worker directly instead of calling the UI-updating
+            # ``stop`` callback.
+            self.overexposure_tab.cancel_requested = True
+            self.overexposure_tab.cancel_event.set()
         self._cancel_pending_ui_callbacks()
         super().destroy()

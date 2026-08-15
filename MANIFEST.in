@@ -1,0 +1,41 @@
+include CHANGELOG.md
+include CITATION.cff
+include CODE_OF_CONDUCT.md
+include CONTRIBUTING.md
+include LICENSE
+include PACKAGE_README.md
+include README.md
+include SECURITY.md
+include requirements.txt
+include .zenodo.json
+include config.example.json
+include START_RingSentry.bat
+include START_RingSentry.cmd
+include 双击启动_RingSentry.cmd
+
+recursive-include assets/readme *.svg
+include docs/CORE_API.md
+include docs/USER_GUIDE.md
+include docs/ZENODO_DOI_PLAN.md
+recursive-include docs/releases *.md
+recursive-include examples *.py
+include tools/q_calculator_standalone.py
+include paper/paper.bib
+include paper/paper.md
+include paper/README.md
+include paper/figures/make_figures.py
+recursive-include paper/figures *.svg *.png *.pdf
+recursive-include tests *.py
+
+prune paper/_build
+prune paper/publishing-artifacts
+exclude paper/paper.pdf
+exclude paper/paper.tex
+exclude paper/paper.html
+exclude paper/paper.jats
+exclude paper/paper.crossref
+exclude paper/paper.cff
+exclude paper/paper.preprint*
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude .DS_Store

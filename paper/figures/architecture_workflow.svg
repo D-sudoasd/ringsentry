@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="511.2pt" height="403.2pt" viewBox="0 0 511.2 403.2" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>RingSentry paper/figures/make_figures.py</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 403.2 
+L 511.2 403.2 
+L 511.2 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 75.38922 148.663872 
+L 131.64678 148.663872 
+Q 136.40094 148.663872 136.40094 144.938304 
+L 136.40094 94.643136 
+Q 136.40094 90.917568 131.64678 90.917568 
+L 75.38922 90.917568 
+Q 70.63506 90.917568 70.63506 94.643136 
+L 70.63506 144.938304 
+Q 70.63506 148.663872 75.38922 148.663872 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #e8f3f8; stroke: #0072b2; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 140.36274 148.663872 
+L 206.12862 148.663872 
+Q 210.88278 148.663872 210.88278 144.938304 
+L 210.88278 94.643136 
+Q 210.88278 90.917568 206.12862 90.917568 
+L 140.36274 90.917568 
+Q 135.60858 90.917568 135.60858 94.643136 
+L 135.60858 144.938304 
+Q 135.60858 148.663872 140.36274 148.663872 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #e8f3f8; stroke: #0072b2; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 214.84458 148.663872 
+L 282.98754 148.663872 
+Q 287.7417 148.663872 287.7417 144.938304 
+L 287.7417 94.643136 
+Q 287.7417 90.917568 282.98754 90.917568 
+L 214.84458 90.917568 
+Q 210.09042 90.917568 210.09042 94.643136 
+L 210.09042 144.938304 
+Q 210.09042 148.663872 214.84458 148.663872 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #e8f5f0; stroke: #009e73; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 291.7035 148.663872 
+L 373.31658 148.663872 
+Q 378.07074 148.663872 378.07074 144.938304 
+L 378.07074 94.643136 
+Q 378.07074 90.917568 373.31658 90.917568 
+L 291.7035 90.917568 
+Q 286.94934 90.917568 286.94934 94.643136 
+L 286.94934 144.938304 
+Q 286.94934 148.663872 291.7035 148.663872 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #fff3dc; stroke: #e69f00; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 382.03254 148.663872 
+L 448.59078 148.663872 
+Q 453.34494 148.663872 453.34494 144.938304 
+L 453.34494 94.643136 
+Q 453.34494 90.917568 448.59078 90.917568 
+L 382.03254 90.917568 
+Q 377.27838 90.917568 377.27838 94.643136 
+L 377.27838 144.938304 
+Q 377.27838 148.663872 382.03254 148.663872 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #e8f3f8; stroke: #0072b2; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 135.232905 119.79072 
+Q 136.006668 119.79072 135.886004 119.79072 
+" clip-path="url(#p0fc4ebfcc7)" style="fill: none; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+    <path d="M 132.686004 118.19072 
+L 135.886004 119.79072 
+L 132.686004 121.39072 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #202124; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 209.714745 119.79072 
+Q 210.488508 119.79072 210.367844 119.79072 
+" clip-path="url(#p0fc4ebfcc7)" style="fill: none; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+    <path d="M 207.167844 118.19072 
+L 210.367844 119.79072 
+L 207.167844 121.39072 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #202124; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 286.573665 119.79072 
+Q 287.347428 119.79072 287.226764 119.79072 
+" clip-path="url(#p0fc4ebfcc7)" style="fill: none; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+    <path d="M 284.026764 118.19072 
+L 287.226764 119.79072 
+L 284.026764 121.39072 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #202124; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 376.902705 119.79072 
+Q 377.676468 119.79072 377.555804 119.79072 
+" clip-path="url(#p0fc4ebfcc7)" style="fill: none; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+    <path d="M 374.355804 118.19072 
+L 377.555804 119.79072 
+L 374.355804 121.39072 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #202124; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 74.59686 248.63328 
+L 449.38314 248.63328 
+Q 454.1373 248.63328 454.1373 244.907712 
+L 454.1373 176.295168 
+Q 454.1373 172.5696 449.38314 172.5696 
+L 74.59686 172.5696 
+Q 69.8427 172.5696 69.8427 176.295168 
+L 69.8427 244.907712 
+Q 69.8427 248.63328 74.59686 248.63328 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #f5f5f5; stroke: #e69f00; stroke-width: 0.75; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 333.3024 148.180629 
+Q 333.3024 159.376274 333.3024 169.677492 
+" clip-path="url(#p0fc4ebfcc7)" style="fill: none; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+    <path d="M 334.9024 166.477492 
+L 333.3024 169.677492 
+L 331.7024 166.477492 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #202124; stroke: #202124; stroke-width: 0.8; stroke-linecap: round"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 74.59686 344.87712 
+L 253.27404 344.87712 
+Q 258.0282 344.87712 258.0282 341.151552 
+L 258.0282 266.329728 
+Q 258.0282 262.60416 253.27404 262.60416 
+L 74.59686 262.60416 
+Q 69.8427 262.60416 69.8427 266.329728 
+L 69.8427 341.151552 
+Q 69.8427 344.87712 74.59686 344.87712 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #ffffff; stroke-dasharray: 4,2; stroke-dashoffset: 0; stroke: #d55e00; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 270.70596 344.87712 
+L 449.38314 344.87712 
+Q 454.1373 344.87712 454.1373 341.151552 
+L 454.1373 266.329728 
+Q 454.1373 262.60416 449.38314 262.60416 
+L 270.70596 262.60416 
+Q 265.9518 262.60416 265.9518 266.329728 
+L 265.9518 341.151552 
+Q 265.9518 344.87712 270.70596 344.87712 
+z
+" clip-path="url(#p0fc4ebfcc7)" style="fill: #ffffff; stroke-dasharray: 4,2; stroke-dashoffset: 0; stroke: #009e73; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 9.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #202124" x="261.99" y="64.68642" transform="rotate(-0 261.99 64.68642)">RingSentry architecture and auditable processing workflow</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #666666" x="73.8045" y="78.49926" transform="rotate(-0 73.8045 78.49926)">Main batch path (GUI-orchestrated; per-file core data path)</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #202124" x="78.55866" y="105.871091" transform="rotate(-0 78.55866 105.871091)">1  Entry / GUI</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(75.037406 118.973074)">main.py → App</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(90.680437 128.256715)">explicit</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(82.277812 137.441918)">parameters</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #202124" x="143.53218" y="105.766279" transform="rotate(-0 143.53218 105.766279)">2  Discover / load</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(152.23518 118.973074)">core.loader</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(141.039555 128.286246)">files → 2D arrays</text>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #202124" x="218.01402" y="105.871091" transform="rotate(-0 218.01402 105.871091)">3  QC / preflight</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(227.439622 118.973074)">core.quality</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(212.500747 128.391246)">read-only QC / plan</text>
+   </g>
+   <g id="text_9">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #202124" x="294.87294" y="105.79181" transform="rotate(-0 294.87294 105.79181)">4  Processing</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(310.572259 118.973074)">core.worker</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(294.45804 128.158278)">→ apply_processing</text>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #202124" x="385.20198" y="105.871091" transform="rotate(-0 385.20198 105.871091)">5  Write / report</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(395.709472 118.973074)">core.writer</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(385.776472 128.158278)">+ gui.app report</text>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #202124" x="81.7281" y="189.696371" transform="rotate(-0 81.7281 189.696371)">apply_processing: fixed, explicit operation order</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #202124" x="261.99" y="202.68486" transform="rotate(-0 261.99 202.68486)">1 Dark subtraction  →  2 Flat correction  →  3 Background offset  →  4 Validate clipping parameters</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #202124" x="261.99" y="215.416509" transform="rotate(-0 261.99 215.416509)">5 ROI  →  6 Mask  →  7 Absolute clipping  →  8 Percentile clipping</text>
+   </g>
+   <g id="text_16">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #202124" x="261.99" y="228.142908" transform="rotate(-0 261.99 228.142908)">9 Negative clipping  →  10 Hot-pixel suppression  →  11 Rotate / flip  →  12 Block-mean binning</text>
+   </g>
+   <g id="text_17">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #202124" x="261.99" y="240.871932" transform="rotate(-0 261.99 240.871932)">13 Intensity transform  →  14 Gamma  →  15 Normalization</text>
+   </g>
+   <g id="text_18">
+    <text style="font-weight: 700; font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #666666" x="261.99" y="257.01606" transform="rotate(-0 261.99 257.01606)">Independent tools (separate GUI tabs and core modules; not batch stages)</text>
+   </g>
+   <g id="text_19">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #d55e00" x="80.14338" y="277.557683" transform="rotate(-0 80.14338 277.557683)">Independent: CBF zero-value repair</text>
+   </g>
+   <g id="text_20">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #666666" x="80.14338" y="287.86549" transform="rotate(-0 80.14338 287.86549)">core.overexposure_repair</text>
+   </g>
+   <g id="text_21">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(80.14338 297.281785)">Scan → target mask → write / read-back</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(80.14338 306.699957)">→ verify → CSV / configuration / QC reports</text>
+   </g>
+   <g id="text_22">
+    <text style="font-weight: 700; font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(80.14338 326.675034)">Configured zeros only; cannot recover</text>
+    <text style="font-weight: 700; font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(80.14338 335.658046)">true saturated intensity.</text>
+   </g>
+   <g id="text_23">
+    <text style="font-weight: 700; font-size: 8.6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #009e73" x="276.25248" y="277.557683" transform="rotate(-0 276.25248 277.557683)">Independent: Q geometry calculator</text>
+   </g>
+   <g id="text_24">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #666666" x="276.25248" y="287.967866" transform="rotate(-0 276.25248 287.967866)">core.diffraction_model</text>
+   </g>
+   <g id="text_25">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(276.25248 297.281785)">User λ / distance / pixel size /</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(276.25248 306.60152)">beam center → ideal-planar Q / 2θ / r / d</text>
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(276.25248 315.914692)">+ detector view / export</text>
+   </g>
+   <g id="text_26">
+    <text style="font-weight: 700; font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(276.25248 326.785284)">No image calibration, integration, peak fitting,</text>
+    <text style="font-weight: 700; font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #202124" transform="translate(276.25248 335.768297)">or refinement.</text>
+   </g>
+   <g id="text_27">
+    <text style="font-size: 8.4px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #666666" x="261.99" y="354.59635" transform="rotate(-0 261.99 354.59635)">Scope: inspectable preprocessing, quality control, geometry conversion, and export of 2D detector images.</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p0fc4ebfcc7">
+   <rect x="63.9" y="48.384" width="396.18" height="310.464"/>
+  </clipPath>
+ </defs>
+</svg>

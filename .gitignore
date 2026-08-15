@@ -4,12 +4,32 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Distribution / 分发
 dist/
 build/
 *.egg-info/
 *.egg
+
+# Local examples / 本地示例输出
+example_output/
+
+# JOSS/Inara build products (paper sources and figures remain tracked)
+paper/_build/
+paper/paper.pdf
+paper/paper.tex
+paper/paper.html
+paper/paper.jats
+paper/paper.crossref
+paper/paper.cff
+paper/paper.preprint*
+paper/publishing-artifacts/
+paper/*.aux
+paper/*.log
+paper/*.out
 
 # Virtual environments / 虚拟环境
 .venv/

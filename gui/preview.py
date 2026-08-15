@@ -50,6 +50,70 @@ def _roi_from_drag_points(start, end):
     return x, y, w_roi, h_roi
 
 
+def _preview_processing_arrays(
+    img,
+    *,
+    dark_frame=None,
+    flat_frame=None,
+    flat_is_dark_subtracted=True,
+    roi=None,
+    mask_frame=None,
+    mask_nonzero_is_invalid=True,
+    clip_negative=False,
+    bg_offset=0.0,
+    min_intensity=None,
+    max_intensity=None,
+    rotate_deg="0",
+    flip_x=False,
+    flip_y=False,
+    bin_factor=1,
+    pclip_low=None,
+    pclip_high=None,
+    intensity_transform="none",
+    gamma=1.0,
+    norm_mode="none",
+    hot_pixel_enable=False,
+    hot_pixel_window=3,
+    hot_pixel_sigma=8.0,
+):
+    """Return coordinate and final arrays used by the interactive preview.
+
+    The coordinate array deliberately omits ROI and geometry/scaling steps so
+    ROI selection and line profiles stay in original-image coordinates.  The
+    final array uses the same complete processing options as batch execution.
+    """
+    shared = {
+        "dark_frame": dark_frame,
+        "flat_frame": flat_frame,
+        "flat_is_dark_subtracted": flat_is_dark_subtracted,
+        "mask_frame": mask_frame,
+        "mask_nonzero_is_invalid": mask_nonzero_is_invalid,
+        "clip_negative": clip_negative,
+        "bg_offset": bg_offset,
+        "min_intensity": min_intensity,
+        "max_intensity": max_intensity,
+    }
+    coordinate_img = apply_processing(img, roi=None, **shared)
+    final_img = apply_processing(
+        img,
+        roi=roi,
+        rotate_deg=rotate_deg,
+        flip_x=flip_x,
+        flip_y=flip_y,
+        bin_factor=bin_factor,
+        pclip_low=pclip_low,
+        pclip_high=pclip_high,
+        intensity_transform=intensity_transform,
+        gamma=gamma,
+        norm_mode=norm_mode,
+        hot_pixel_enable=hot_pixel_enable,
+        hot_pixel_window=hot_pixel_window,
+        hot_pixel_sigma=hot_pixel_sigma,
+        **shared,
+    )
+    return coordinate_img, final_img
+
+
 def show_preview(app):
     """Open a preview window with comparison, single, and line profile modes."""
     if not app.filelist:
@@ -62,9 +126,29 @@ def show_preview(app):
         return
 
     try:
-        Figure, FigureCanvasTkAgg = _lazy_import_matplotlib()
-        import matplotlib
-        apply_matplotlib_style(matplotlib, preset="raw_inspection")
+        png_enabled = app.output_tab.format_vars.get('png').get()
+    except (AttributeError, KeyError):
+        png_enabled = False
+    if png_enabled:
+        try:
+            png_opts = validate_png_options(
+                {
+                    "scale": app.output_tab.png_scale_var.get(),
+                    "vmin": app.output_tab.png_min_var.get(),
+                    "vmax": app.output_tab.png_max_var.get(),
+                    "colormap": app.output_tab.png_colormap_var.get(),
+                    "dpi": app.output_tab.png_dpi_var.get(),
+                }
+            )
+        except Exception as e:
+            messagebox.showerror(
+                "\u8BBE\u7F6E\u65E0\u6548", f"\u5904\u7406\u8BBE\u7F6E\u9519\u8BEF: {e}"
+            )
+            return
+    else:
+        png_opts = None
+
+    try:
         first_file = (
             app.filelist[0][0]
             if isinstance(app.filelist[0], tuple)
@@ -72,8 +156,7 @@ def show_preview(app):
         )
         img = load_image(first_file, app.io_tab.h5_path_var.get())
 
-        # Parse ROI
-        roi = None
+        # Preview and batch execution use the same fail-closed ROI semantics.
         try:
             roi = parse_roi_text(app.processing_tab.roi_var.get())
             if roi:
@@ -83,11 +166,14 @@ def show_preview(app):
                         f"ROI \u8D85\u51FA\u56FE\u50CF\u8303\u56F4 {img.shape}"
                     )
         except Exception as e:
-            messagebox.showwarning(
-                "ROI \u65E0\u6548",
-                f"{e}\n\u9884\u89C8\u65F6\u4E0D\u4F7F\u7528 ROI\u3002"
+            messagebox.showerror(
+                "\u8BBE\u7F6E\u65E0\u6548", f"\u5904\u7406\u8BBE\u7F6E\u9519\u8BEF: {e}"
             )
-            roi = None
+            return
+
+        Figure, FigureCanvasTkAgg = _lazy_import_matplotlib()
+        import matplotlib
+        apply_matplotlib_style(matplotlib, preset="raw_inspection")
 
         # Gather settings from tabs
         proc_tab = app.processing_tab
@@ -98,23 +184,9 @@ def show_preview(app):
         # Raw image (no processing)
         raw_img = img.astype(np.float32)
 
-        # Display image (processing without ROI, for interactive selection)
-        display_img = apply_processing(
-            img,
-            dark_frame=app.dark_frame,
-            flat_frame=app.flat_frame,
-            flat_is_dark_subtracted=proc_tab.flat_is_dark_subtracted_var.get(),
-            roi=None,
-            mask_frame=app.mask_frame,
-            mask_nonzero_is_invalid=proc_tab.mask_nonzero_is_invalid_var.get(),
-            clip_negative=proc_tab.clip_negative_var.get(),
-            bg_offset=proc_tab.bg_offset_var.get(),
-            min_intensity=min_i,
-            max_intensity=max_i,
-        )
-
-        # Final image with full pipeline (used for stats)
-        processed_img = apply_processing(
+        # Keep a coordinate-space view for ROI/line selection, and a separate
+        # batch-equivalent result for final preview and output rendering.
+        coordinate_img, processed_img = _preview_processing_arrays(
             img,
             dark_frame=app.dark_frame,
             flat_frame=app.flat_frame,
@@ -150,30 +222,15 @@ def show_preview(app):
         preview_origin = 'upper'
         png_display_img = None
         png_title_suffix = ""
-        try:
-            png_enabled = app.output_tab.format_vars.get('png').get()
-        except Exception:
-            png_enabled = False
         if png_enabled:
-            try:
-                png_opts = validate_png_options(
-                    {
-                        "scale": app.output_tab.png_scale_var.get(),
-                        "vmin": app.output_tab.png_min_var.get(),
-                        "vmax": app.output_tab.png_max_var.get(),
-                        "colormap": app.output_tab.png_colormap_var.get(),
-                    }
-                )
-                png_display_img = array_to_png_rgb(
-                    display_img,
-                    vmin=png_opts["vmin"],
-                    vmax=png_opts["vmax"],
-                    scale=png_opts["scale"],
-                    colormap=png_opts["colormap"],
-                )
-                png_title_suffix = f" [PNG {png_opts['scale']}]"
-            except Exception as e:
-                app.log(f"PNG \u9884\u89C8\u8BBE\u7F6E\u65E0\u6548\uFF0C\u4F7F\u7528\u9ED8\u8BA4\u5F3A\u5EA6\u663E\u793A: {e}")
+            png_display_img = array_to_png_rgb(
+                processed_img,
+                vmin=png_opts["vmin"],
+                vmax=png_opts["vmax"],
+                scale=png_opts["scale"],
+                colormap=png_opts["colormap"],
+            )
+            png_title_suffix = f" [PNG {png_opts['scale']}]"
 
         # --- Control toolbar ---
         control_frame = ttk.Frame(win)
@@ -230,11 +287,17 @@ def show_preview(app):
         line_points = []
         line_artists = []
 
+        def _imshow_coordinate(ax):
+            return (
+                ax.imshow(coordinate_img, cmap='viridis', origin=preview_origin),
+                True,
+            )
+
         def _imshow_processed(ax):
             if png_display_img is not None:
                 return ax.imshow(png_display_img, origin=preview_origin), False
             return (
-                ax.imshow(display_img, cmap='viridis', origin=preview_origin),
+                ax.imshow(processed_img, cmap='viridis', origin=preview_origin),
                 True,
             )
 
@@ -254,11 +317,11 @@ def show_preview(app):
 
             if mode == "comparison":
                 mode_hint.set(
-                    "\u5728\u5904\u7406\u56FE\u50CF\u4E0A\u62D6\u52A8\u9009\u62E9 ROI\uFF08\u5DE6\u4E0A\u539F\u70B9\uFF09"
+                    "\u5728\u5750\u6807\u9884\u89C8\u4E0A\u62D6\u52A8\u9009\u62E9 ROI\uFF08\u5DE6\u4E0A\u539F\u70B9\uFF09"
                 )
                 _draw_comparison()
             elif mode == "single":
-                mode_hint.set("\u62D6\u52A8\u9009\u62E9 ROI\uFF08\u5DE6\u4E0A\u539F\u70B9\uFF09")
+                mode_hint.set("\u5355\u56FE\u663E\u793A\u6700\u7EC8\u5904\u7406\u7ED3\u679C")
                 _draw_single()
             elif mode == "line_profile":
                 mode_hint.set(
@@ -309,7 +372,7 @@ def show_preview(app):
 
         def _draw_comparison():
             ax_raw = fig.add_subplot(131)
-            ax_proc = fig.add_subplot(132)
+            ax_coord = fig.add_subplot(132)
             ax_hist = fig.add_subplot(133)
 
             im_raw = ax_raw.imshow(
@@ -318,15 +381,14 @@ def show_preview(app):
             fig.colorbar(im_raw, ax=ax_raw, label='Intensity')
             ax_raw.set_title("\u539F\u59CB\u56FE\u50CF (Raw)")
 
-            im_proc, show_colorbar = _imshow_processed(ax_proc)
+            im_proc, show_colorbar = _imshow_coordinate(ax_coord)
             if show_colorbar:
-                fig.colorbar(im_proc, ax=ax_proc, label='Intensity')
-            ax_proc.set_title(
-                "\u5904\u7406\u540E\u56FE\u50CF (ROI: \u5DE6\u4E0A\u539F\u70B9)"
-                + png_title_suffix
+                fig.colorbar(im_proc, ax=ax_coord, label='Intensity')
+            ax_coord.set_title(
+                "\u5750\u6807\u9884\u89C8\uFF08ROI \u9009\u62E9\u7528\uFF09"
             )
-            _draw_roi_rect(ax_proc)
-            roi_target_ax[0] = ax_proc
+            _draw_roi_rect(ax_coord)
+            roi_target_ax[0] = ax_coord
 
             _draw_histogram_dual(ax_hist)
 
@@ -338,11 +400,9 @@ def show_preview(app):
             if show_colorbar:
                 fig.colorbar(im, ax=ax_img, label='Intensity')
             ax_img.set_title(
-                "\u5904\u7406\u56FE\u50CF (ROI: \u5DE6\u4E0A\u539F\u70B9)"
+                "\u6700\u7EC8\u5904\u7406\u7ED3\u679C"
                 + png_title_suffix
             )
-            _draw_roi_rect(ax_img)
-            roi_target_ax[0] = ax_img
 
             finite = processed_img[np.isfinite(processed_img)]
             if finite.size > 0:
@@ -373,8 +433,8 @@ def show_preview(app):
             ax_raw.imshow(raw_img, cmap='viridis', origin=preview_origin)
             ax_raw.set_title("\u539F\u59CB\u56FE\u50CF (\u70B9\u51FB\u5B9A\u4E49\u7EBF\u6BB5)")
 
-            _imshow_processed(ax_proc)
-            ax_proc.set_title("\u5904\u7406\u56FE\u50CF" + png_title_suffix)
+            _imshow_coordinate(ax_proc)
+            ax_proc.set_title("\u5750\u6807\u9884\u89C8\uFF08\u5256\u9762\u9009\u62E9\u7528\uFF09")
             line_image_axes.extend([ax_raw, ax_proc])
 
             ax_profile.set_xlabel("\u50CF\u7D20\u8DDD\u79BB (Pixel Distance)")
@@ -400,7 +460,7 @@ def show_preview(app):
                 raw_img, x0, y0, x1, y1
             )
             dist_proc, prof_proc = _sample_line_profile(
-                display_img, x0, y0, x1, y1
+                coordinate_img, x0, y0, x1, y1
             )
 
             fig.clear()
@@ -414,11 +474,11 @@ def show_preview(app):
             ax_raw.plot(x1, y1, 'ro', markersize=6)
             ax_raw.set_title("\u539F\u59CB\u56FE\u50CF + \u7EBF\u6BB5")
 
-            _imshow_processed(ax_proc)
+            _imshow_coordinate(ax_proc)
             ax_proc.plot([x0, x1], [y0, y1], 'r-', linewidth=2)
             ax_proc.plot(x0, y0, 'ro', markersize=6)
             ax_proc.plot(x1, y1, 'ro', markersize=6)
-            ax_proc.set_title("\u5904\u7406\u56FE\u50CF + \u7EBF\u6BB5" + png_title_suffix)
+            ax_proc.set_title("\u5750\u6807\u9884\u89C8 + \u7EBF\u6BB5")
 
             ax_profile.plot(
                 dist_raw, prof_raw, alpha=0.7,
@@ -426,7 +486,7 @@ def show_preview(app):
             )
             ax_profile.plot(
                 dist_proc, prof_proc, alpha=0.7,
-                label="\u5904\u7406\u540E", color="#e74c3c",
+                label="\u5750\u6807\u9884\u89C8", color="#e74c3c",
             )
             ax_profile.set_xlabel("\u50CF\u7D20\u8DDD\u79BB (Pixel Distance)")
             ax_profile.set_ylabel("\u5F3A\u5EA6 (Intensity)")

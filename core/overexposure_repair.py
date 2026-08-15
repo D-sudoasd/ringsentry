@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Research-grade core for safe CBF zero-to-saturation repair.
+Core routines for guarded replacement of a configured CBF exceptional value.
 
-The core guarantee is strict:
+Validation invariant:
     pixels selected by the target mask are replaced;
     all non-target pixels must remain unchanged.
 
@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -30,7 +31,17 @@ from typing import Callable, Iterable, Optional, Union
 import fabio
 import numpy as np
 
+from core.constants import APP_VERSION as RINGSENTRY_APP_VERSION
 
+
+SOFTWARE_NAME = "RingSentry"
+SOFTWARE_VERSION = (
+    RINGSENTRY_APP_VERSION[1:]
+    if RINGSENTRY_APP_VERSION.startswith("v")
+    else RINGSENTRY_APP_VERSION
+)
+COMPONENT_NAME = "CBF Zero2Sat overexposure repair"
+# Legacy validation-index fields retained for existing consumers.
 APP_NAME = "CBF Zero2Sat Research Tool"
 APP_VERSION = "2.0"
 SUPPORTED_EXTENSIONS = (".cbf", ".CBF")
@@ -43,7 +54,12 @@ PROBLEM_FILES_SUMMARY_NAME = "problem_files_summary.csv"
 ORIGINAL_CLEANUP_SUMMARY_NAME = "original_cleanup_summary.csv"
 VALIDATION_INDEX_JSON_NAME = "zero2sat_validation_index.json"
 VALIDATION_INDEX_CSV_NAME = "zero2sat_validation_index.csv"
-VALIDATION_INDEX_SCHEMA_VERSION = 1
+VALIDATION_INDEX_SCHEMA_VERSION = 2
+AUTOMATIC_CLEANUP_DISABLED_MESSAGE = (
+    "Automatic original CBF removal is disabled. RingSentry only reports "
+    "verified cleanup candidates; archive originals manually after "
+    "independent review."
+)
 AUTO_EXCLUDED_DIR_NAMES = {
     ".git",
     "__pycache__",
@@ -101,8 +117,29 @@ class ProcessConfig:
     metadata: ProjectMetadata = field(default_factory=ProjectMetadata)
 
     def normalized(self) -> "ProcessConfig":
-        self.input_dir = Path(self.input_dir).expanduser().resolve()
-        self.output_dir = Path(self.output_dir).expanduser().resolve()
+        logical_input_dir = Path(self.input_dir).expanduser().absolute()
+        logical_output_dir = Path(self.output_dir).expanduser().absolute()
+        if path_has_link_or_reparse_component(
+            logical_input_dir, Path(logical_input_dir.anchor)
+        ):
+            raise ValueError(
+                "Input directory path must not contain a symbolic link or "
+                "reparse-point."
+            )
+        if path_has_link_or_reparse_component(
+            logical_output_dir, Path(logical_output_dir.anchor)
+        ):
+            raise ValueError(
+                "Output directory path must not contain a symbolic link or "
+                "reparse-point."
+            )
+        self.input_dir = logical_input_dir.resolve()
+        self.output_dir = logical_output_dir.resolve()
+        if self.overwrite_original:
+            raise ValueError(
+                "Original CBF overwrite is disabled. Choose a separate output "
+                "directory and retain the source detector data."
+            )
         self.radius = max(1, int(self.radius))
         self.workers = max(1, int(self.workers))
         self.minor_zero_pixel_threshold = max(0, int(self.minor_zero_pixel_threshold))
@@ -193,8 +230,8 @@ class DuplicateCbfResult:
     data_dir: str
     original_file: str = ""
     duplicate_file: str = ""
-    action: str = ""  # ready_to_quarantine | moved_to_quarantine | report_only | quarantine_failed
-    status: str = ""  # duplicate_confirmed | quarantined | name_pattern_hash_mismatch | orphan_duplicate_name | error
+    action: str = ""  # report_only
+    status: str = ""  # duplicate_confirmed | name_pattern_hash_mismatch | orphan_duplicate_name | error
     size_bytes: int = 0
     original_sha256: str = ""
     duplicate_sha256: str = ""
@@ -266,14 +303,15 @@ class CorrectedOutputEvaluation:
     strict_validation_elapsed_s: float = 0.0
     fast_path_elapsed_s: float = 0.0
     error: str = ""
+    cleanup_manifest: list[dict] = field(default_factory=list, repr=False)
 
 
 @dataclass
 class OriginalCleanupResult:
     data_dir: str
     output_dir: str = ""
-    action: str = ""  # detect_only | delete_original_cbf
-    status: str = ""  # ready_to_delete | deleted | already_cleaned | skipped_no_output | skipped_needs_review | delete_failed | error
+    action: str = ""  # report_only
+    status: str = ""  # cleanup_candidate | cleanup_disabled | already_cleaned | skipped_no_output | skipped_needs_review | error
     corrected_validation_status: str = ""
     original_files: int = 0
     output_files: int = 0
@@ -295,7 +333,17 @@ def config_to_dict(cfg: ProcessConfig) -> dict:
     d = asdict(cfg)
     d["input_dir"] = str(cfg.input_dir)
     d["output_dir"] = str(cfg.output_dir)
+    d["software"] = software_identity_dict()
     return d
+
+
+def software_identity_dict() -> dict[str, str]:
+    """Return provenance for reports emitted by this RingSentry component."""
+    return {
+        "name": SOFTWARE_NAME,
+        "version": SOFTWARE_VERSION,
+        "component_name": COMPONENT_NAME,
+    }
 
 
 def config_from_dict(d: dict) -> ProcessConfig:
@@ -349,12 +397,104 @@ def load_validation_index(output_dir: Path) -> tuple[Optional[dict], str, str]:
             index = json.load(f)
     except Exception as exc:
         return None, "read_error", str(exc)
+    if not isinstance(index, dict):
+        return None, "schema_error", "Validation index must be a JSON object."
     return index, "loaded", ""
+
+
+def validation_index_records_schema_error(records: object) -> str:
+    """Return a concise error for malformed validation-index records."""
+    if not isinstance(records, list):
+        return "Validation-index records must be a JSON array."
+    if not records:
+        return "Validation index has no file records."
+
+    required_string_fields = (
+        "original_name",
+        "output_name",
+        "original_sha256",
+        "output_sha256",
+    )
+    nonnegative_integer_fields = (
+        "original_size_bytes",
+        "original_mtime_ns",
+        "output_size_bytes",
+        "output_mtime_ns",
+        "zero_pixels",
+        "target_pixels",
+        "ignored_zero_pixels",
+        "non_target_diff",
+        "target_bad",
+    )
+    original_names: list[str] = []
+    output_names: list[str] = []
+
+    for position, record in enumerate(records, 1):
+        if not isinstance(record, dict):
+            return f"Validation-index record {position} must be a JSON object."
+        for field_name in required_string_fields:
+            value = record.get(field_name)
+            if not isinstance(value, str) or not value:
+                return (
+                    f"Validation-index record {position} field "
+                    f"'{field_name}' must be a non-empty string."
+                )
+        for field_name in nonnegative_integer_fields:
+            value = record.get(field_name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return (
+                    f"Validation-index record {position} field "
+                    f"'{field_name}' must be a non-negative integer."
+                )
+        replacement_value = record.get("replacement_value")
+        if not isinstance(replacement_value, int) or isinstance(replacement_value, bool):
+            return (
+                f"Validation-index record {position} field "
+                "'replacement_value' must be an integer."
+            )
+        if not isinstance(record.get("readback_validation_passed"), bool):
+            return (
+                f"Validation-index record {position} field "
+                "'readback_validation_passed' must be a boolean."
+            )
+        for field_name in ("original_sha256", "output_sha256"):
+            digest = record[field_name]
+            if len(digest) != 64 or any(
+                char not in "0123456789abcdefABCDEF" for char in digest
+            ):
+                return (
+                    f"Validation-index record {position} field "
+                    f"'{field_name}' must be a 64-character SHA-256 digest."
+                )
+
+        original_name = record["original_name"]
+        output_name = record["output_name"]
+        if Path(original_name).name != original_name or Path(output_name).name != output_name:
+            return "Validation-index file names must not contain directory components."
+        original_names.append(original_name.casefold())
+        output_names.append(output_name.casefold())
+
+    if len(set(original_names)) != len(original_names):
+        return "Validation index contains duplicate original-file records."
+    if len(set(output_names)) != len(output_names):
+        return "Validation index contains duplicate output-file records."
+    return ""
 
 
 def write_validation_index(data_dir: Path, output_dir: Path, cfg: ProcessConfig,
                            records: list[dict], validation_mode: str,
                            trusted_for_cleanup: bool) -> tuple[Path, Path]:
+    schema_error = validation_index_records_schema_error(records)
+    if schema_error:
+        raise ValueError(schema_error)
+    requested_cleanup_trust = bool(
+        trusted_for_cleanup
+        and validation_index_trusted_from_records(data_dir, cfg, records)
+    )
+    # Validation indexes are editable files, not cryptographic trust anchors.
+    # Keep the legacy field for readers, but never authorize automatic removal
+    # of original detector data from an index.
+    trusted_for_cleanup = False
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path, csv_path = validation_index_paths(output_dir)
@@ -362,6 +502,7 @@ def write_validation_index(data_dir: Path, output_dir: Path, cfg: ProcessConfig,
         "schema_version": VALIDATION_INDEX_SCHEMA_VERSION,
         "app_name": APP_NAME,
         "app_version": APP_VERSION,
+        "software": software_identity_dict(),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "data_dir": str(Path(data_dir).expanduser().resolve()),
         "output_dir": str(output_dir),
@@ -369,6 +510,8 @@ def write_validation_index(data_dir: Path, output_dir: Path, cfg: ProcessConfig,
         "repair_rules": repair_rules_dict(cfg),
         "validation_mode": validation_mode,
         "trusted_for_cleanup": bool(trusted_for_cleanup),
+        "cleanup_trust_requested": requested_cleanup_trust,
+        "cleanup_policy": "report_only_no_automatic_original_removal",
         "records": records,
     }
     with json_path.open("w", encoding="utf-8") as f:
@@ -378,6 +521,7 @@ def write_validation_index(data_dir: Path, output_dir: Path, cfg: ProcessConfig,
         "original_name", "output_name",
         "original_size_bytes", "original_mtime_ns",
         "output_size_bytes", "output_mtime_ns",
+        "original_sha256", "output_sha256",
         "shape", "dtype", "zero_pixels", "target_pixels",
         "ignored_zero_pixels", "replacement_value",
         "status", "readback_validation_passed",
@@ -405,6 +549,8 @@ def validation_record_from_file_result(data_dir: Path, output_dir: Path, cfg: Pr
         return None
     original_stat = file_stat_signature(original_path)
     output_stat = file_stat_signature(output_path)
+    original_sha256 = sha256_file(original_path)
+    output_sha256 = sha256_file(output_path)
     return {
         "original_name": original_path.name,
         "output_name": output_path.name,
@@ -412,6 +558,8 @@ def validation_record_from_file_result(data_dir: Path, output_dir: Path, cfg: Pr
         "original_mtime_ns": original_stat["mtime_ns"],
         "output_size_bytes": output_stat["size_bytes"],
         "output_mtime_ns": output_stat["mtime_ns"],
+        "original_sha256": original_sha256,
+        "output_sha256": output_sha256,
         "shape": result.shape_before or result.shape_after,
         "dtype": result.dtype_before or result.dtype_after,
         "zero_pixels": int(result.zero_pixels),
@@ -439,13 +587,20 @@ def validation_record_from_file_result(data_dir: Path, output_dir: Path, cfg: Pr
 
 def validation_index_trusted_from_records(data_dir: Path, cfg: ProcessConfig,
                                           records: list[dict]) -> bool:
+    if validation_index_records_schema_error(records):
+        return False
     if not cfg.verify_after_write:
         return False
     original_names = {p.name for p in direct_cbf_files(data_dir)}
     record_names = {str(r.get("original_name", "")) for r in records}
     if not original_names or record_names != original_names:
         return False
-    return all(bool(r.get("readback_validation_passed")) for r in records)
+    return all(
+        bool(r.get("readback_validation_passed"))
+        and bool(r.get("original_sha256"))
+        and bool(r.get("output_sha256"))
+        for r in records
+    )
 
 
 def write_validation_index_from_results(data_dir: Path, output_dir: Path, cfg: ProcessConfig,
@@ -459,8 +614,11 @@ def write_validation_index_from_results(data_dir: Path, output_dir: Path, cfg: P
             records.append(record)
     if not records:
         return None
+    derived_trust = validation_index_trusted_from_records(data_dir, cfg, records)
     if trusted_for_cleanup is None:
-        trusted_for_cleanup = validation_index_trusted_from_records(data_dir, cfg, records)
+        trusted_for_cleanup = derived_trust
+    else:
+        trusted_for_cleanup = bool(trusted_for_cleanup and derived_trust)
     json_path, _csv_path = write_validation_index(
         data_dir, output_dir, cfg, records,
         validation_mode=validation_mode,
@@ -491,14 +649,95 @@ def is_relative_to(path: Path, parent: Path) -> bool:
         return False
 
 
+def is_windows_reparse_point(path: Path) -> bool:
+    """Return whether an existing path is a Windows reparse point.
+
+    ``Path.is_symlink`` did not identify directory junctions on all supported
+    Python versions.  The file-attribute check keeps the guard compatible with
+    Python 3.8 while remaining a no-op on other platforms.
+    """
+    try:
+        attributes = getattr(Path(path).lstat(), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+
+
+def path_has_link_or_reparse_component(path: Path, root: Path) -> bool:
+    """Check a logical path from ``root`` without resolving link components."""
+    path = Path(path).expanduser().absolute()
+    root = Path(root).expanduser().absolute()
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+
+    current = root
+    components = (Path(), *relative.parts)
+    for component in components:
+        if component != Path():
+            current = current / component
+        if current.is_symlink() or is_windows_reparse_point(current):
+            return True
+    return False
+
+
 def iter_cbf_files(input_dir: Path, output_dir: Path, recursive: bool = True, skip_output_dir: bool = True) -> list[Path]:
-    input_dir = Path(input_dir).expanduser().resolve()
+    logical_input_dir = Path(input_dir).expanduser().absolute()
+    if path_has_link_or_reparse_component(
+        logical_input_dir, Path(logical_input_dir.anchor)
+    ):
+        raise ValueError("Input directory must not be a symbolic link or reparse-point.")
+    input_dir = logical_input_dir.resolve()
     output_dir = Path(output_dir).expanduser().resolve()
-    patterns = ["**/*.cbf", "**/*.CBF"] if recursive else ["*.cbf", "*.CBF"]
     files: list[Path] = []
-    for pattern in patterns:
-        files.extend(input_dir.glob(pattern))
-    unique = sorted(set(p.resolve() for p in files if p.is_file()))
+
+    if recursive:
+        for current_root, dir_names, file_names in os.walk(
+            logical_input_dir, topdown=True, followlinks=False
+        ):
+            current = Path(current_root).absolute()
+            safe_dirs = []
+            for name in dir_names:
+                candidate_dir = current / name
+                if path_has_link_or_reparse_component(
+                    candidate_dir, logical_input_dir
+                ):
+                    continue
+                try:
+                    candidate_dir.resolve(strict=True).relative_to(input_dir)
+                except (OSError, ValueError):
+                    continue
+                safe_dirs.append(name)
+            dir_names[:] = safe_dirs
+            for name in file_names:
+                if Path(name).suffix.lower() != ".cbf":
+                    continue
+                candidate = current / name
+                if path_has_link_or_reparse_component(candidate, logical_input_dir):
+                    continue
+                try:
+                    resolved = candidate.resolve(strict=True)
+                    resolved.relative_to(input_dir)
+                except (OSError, ValueError):
+                    continue
+                if resolved.is_file():
+                    files.append(resolved)
+    else:
+        for candidate in logical_input_dir.iterdir():
+            if candidate.suffix.lower() != ".cbf":
+                continue
+            if path_has_link_or_reparse_component(candidate, logical_input_dir):
+                continue
+            try:
+                resolved = candidate.resolve(strict=True)
+                resolved.relative_to(input_dir)
+            except (OSError, ValueError):
+                continue
+            if resolved.is_file():
+                files.append(resolved)
+
+    unique = sorted(set(files))
     if skip_output_dir and output_dir.exists():
         unique = [p for p in unique if not is_relative_to(p, output_dir)]
     # Avoid processing backup and temporary files created by this tool.
@@ -609,9 +848,44 @@ def count_masked_differences(a, b, mask) -> int:
     return int(np.count_nonzero(a[mask] != b[mask]))
 
 
+def validate_output_path(src: Path, output_path: Path, cfg: ProcessConfig) -> None:
+    """Fail closed unless an output is a regular entry under its output root."""
+    output_root = Path(cfg.output_dir).expanduser().absolute()
+    logical_output = Path(output_path).expanduser().absolute()
+    if path_has_link_or_reparse_component(
+        output_root, Path(output_root.anchor)
+    ):
+        raise ValueError(
+            "Output directory path must not contain a symbolic link or reparse-point."
+        )
+    try:
+        logical_output.relative_to(output_root)
+    except ValueError as exc:
+        raise ValueError("Output path is outside the configured output directory.") from exc
+    if path_has_link_or_reparse_component(logical_output.parent, output_root):
+        raise ValueError(
+            "Output parent path must not contain a symbolic link or reparse-point."
+        )
+    canonical_root = output_root.resolve()
+    canonical_parent = logical_output.parent.resolve()
+    try:
+        canonical_parent.relative_to(canonical_root)
+    except ValueError as exc:
+        raise ValueError("Output parent resolved outside the configured output directory.") from exc
+    if logical_output.is_symlink() or is_windows_reparse_point(logical_output):
+        raise ValueError("Output file must not be a symbolic link or reparse-point.")
+    if logical_output.resolve() == Path(src).expanduser().resolve():
+        raise ValueError(
+            "Output path equals input path. Choose another output folder or suffix; "
+            "original CBF overwrite is disabled."
+        )
+
+
 def output_path_for(src: Path, cfg: ProcessConfig) -> Path:
     if cfg.overwrite_original:
-        return src
+        raise ValueError(
+            "Original CBF overwrite is disabled. Choose a separate output directory."
+        )
     if cfg.preserve_subfolders:
         rel = src.resolve().relative_to(cfg.input_dir.resolve())
         out = cfg.output_dir / rel
@@ -620,15 +894,10 @@ def output_path_for(src: Path, cfg: ProcessConfig) -> Path:
     suffix = cfg.suffix.strip()
     if suffix:
         out = out.with_name(out.stem + suffix + out.suffix)
-    if out.resolve() == src.resolve():
-        raise ValueError("Output path equals input path. Choose another output folder/suffix or enable overwrite_original explicitly.")
+    validate_output_path(src, out, cfg)
     out.parent.mkdir(parents=True, exist_ok=True)
+    validate_output_path(src, out, cfg)
     return out
-
-
-def temporary_path_for(final_path: Path) -> Path:
-    timestamp = time.strftime("%Y%m%d%H%M%S")
-    return final_path.with_name(f".{final_path.name}.tmp_zero2sat_{os.getpid()}_{timestamp}.cbf")
 
 
 def validate_repaired_matrix(original, repaired, target_mask, effective_replacement) -> tuple[int, int]:
@@ -644,54 +913,83 @@ def validate_repaired_matrix(original, repaired, target_mask, effective_replacem
 
 def validate_readback(path: Path, expected, original, target_mask) -> tuple[int, int]:
     _, readback = read_image_data(path)
+    if expected.shape != readback.shape:
+        raise ValueError("Shape changed during read-back verification.")
+    if expected.dtype != readback.dtype:
+        raise ValueError("Dtype changed during read-back verification.")
     total_diff = count_differences(expected, readback)
-    if original.shape == readback.shape:
-        non_target = ~target_mask
-        nontarget_diff = count_masked_differences(original, readback, non_target)
-    else:
-        nontarget_diff = total_diff
+    non_target = ~target_mask
+    nontarget_diff = count_masked_differences(original, readback, non_target)
     return total_diff, nontarget_diff
 
 
 def write_repaired(image, repaired, final_path: Path, cfg: ProcessConfig, original_path: Path, original, target_mask) -> tuple[str, int, int]:
+    if cfg.overwrite_original or final_path.resolve() == original_path.resolve():
+        raise ValueError(
+            "Original CBF overwrite is disabled. Write the repaired matrix to a separate copy."
+        )
+    validate_output_path(original_path, final_path, cfg)
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = temporary_path_for(final_path)
+    validate_output_path(original_path, final_path, cfg)
 
     if final_path.exists() and not cfg.overwrite_output and not cfg.overwrite_original:
         raise FileExistsError(f"Output exists: {final_path}")
 
-    image.data = repaired
-    image.write(str(tmp_path))
+    # Create a private, randomly named same-volume directory atomically. This
+    # prevents a predictable pre-existing path or symbolic link from redirecting
+    # the temporary write to detector data outside the intended output path.
+    with tempfile.TemporaryDirectory(
+        prefix=f".{final_path.name}.ringsentry-",
+        dir=str(final_path.parent),
+    ) as temp_dir:
+        tmp_path = Path(temp_dir) / final_path.name
+        image.data = repaired
+        image.write(str(tmp_path))
 
-    if cfg.verify_after_write:
-        tmp_diff, tmp_non_target_diff = validate_readback(tmp_path, repaired, original, target_mask)
-        if tmp_diff != 0 or tmp_non_target_diff != 0:
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-            raise RuntimeError(f"Temporary readback failed: total_diff={tmp_diff}, non_target_diff={tmp_non_target_diff}.")
+        if cfg.verify_after_write:
+            tmp_diff, tmp_non_target_diff = validate_readback(
+                tmp_path, repaired, original, target_mask
+            )
+            if tmp_diff != 0 or tmp_non_target_diff != 0:
+                raise RuntimeError(
+                    "Temporary readback failed: "
+                    f"total_diff={tmp_diff}, non_target_diff={tmp_non_target_diff}."
+                )
 
-    backup_path = None
-    if cfg.overwrite_original and cfg.backup_before_overwrite:
-        backup_path = original_path.with_name(original_path.name + ".bak_zero2sat_original")
-        shutil.copy2(original_path, backup_path)
-
-    os.replace(tmp_path, final_path)
+        validate_output_path(original_path, final_path, cfg)
+        os.replace(tmp_path, final_path)
 
     if cfg.verify_after_write:
         final_diff, final_non_target_diff = validate_readback(final_path, repaired, original, target_mask)
         if final_diff != 0 or final_non_target_diff != 0:
-            if cfg.overwrite_original and backup_path and backup_path.exists():
-                shutil.copy2(backup_path, original_path)
-            else:
-                try:
-                    final_path.unlink()
-                except OSError:
-                    pass
+            try:
+                final_path.unlink()
+            except OSError:
+                pass
             raise RuntimeError(f"Final readback failed: total_diff={final_diff}, non_target_diff={final_non_target_diff}.")
         return str(final_path), final_diff, final_non_target_diff
     return str(final_path), 0, 0
+
+
+def copy_file_atomically(src: Path, final_path: Path, cfg: ProcessConfig) -> None:
+    """Copy through a private same-volume file, then replace the final entry."""
+    validate_output_path(src, final_path, cfg)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    validate_output_path(src, final_path, cfg)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{final_path.name}.ringsentry-",
+        dir=str(final_path.parent),
+    ) as temp_dir:
+        tmp_path = Path(temp_dir) / final_path.name
+        shutil.copy2(src, tmp_path)
+        if (
+            not tmp_path.is_file()
+            or tmp_path.is_symlink()
+            or is_windows_reparse_point(tmp_path)
+        ):
+            raise RuntimeError("Private copy did not produce a regular file.")
+        validate_output_path(src, final_path, cfg)
+        os.replace(tmp_path, final_path)
 
 
 def init_result(src: Path, cfg: ProcessConfig) -> FileResult:
@@ -765,8 +1063,7 @@ def process_file(src: Path, cfg: ProcessConfig) -> FileResult:
                 if final_path.exists() and not cfg.overwrite_output:
                     result.status = "output_exists"
                     return result
-                final_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, final_path)
+                copy_file_atomically(src, final_path, cfg)
                 if cfg.compute_sha256:
                     if not result.original_sha256:
                         result.original_sha256 = sha256_file(src)
@@ -905,7 +1202,7 @@ def write_html_report(results: Iterable[FileResult], cfg: ProcessConfig, output_
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>CBF Zero2Sat QC Report</title>
+<title>RingSentry QC Report - CBF Zero2Sat overexposure repair</title>
 <style>
 body {{ font-family: Arial, sans-serif; margin: 28px; color: #222; }}
 h1, h2 {{ color: #123; }}
@@ -921,8 +1218,9 @@ code {{ background: #f5f5f5; padding: 1px 4px; border-radius: 4px; }}
 </style>
 </head>
 <body>
-<h1>CBF Zero2Sat QC Report</h1>
-<p>Generated by <b>{APP_NAME} v{APP_VERSION}</b> at {esc(time.strftime('%Y-%m-%d %H:%M:%S'))}.</p>
+<h1>RingSentry QC Report</h1>
+<p>Generated by <b>{SOFTWARE_NAME} v{SOFTWARE_VERSION}</b> at {esc(time.strftime('%Y-%m-%d %H:%M:%S'))}.</p>
+<p>Component: <b>{COMPONENT_NAME}</b>.</p>
 
 <h2>Project metadata</h2>
 <table>{meta_html}</table>
@@ -1032,11 +1330,39 @@ def run_batch(
 
 
 def direct_cbf_files(directory: Path) -> list[Path]:
-    directory = Path(directory)
+    directory = Path(directory).expanduser().absolute()
     files: list[Path] = []
     for suffix in SUPPORTED_EXTENSIONS:
         files.extend(directory.glob(f"*{suffix}"))
-    return sorted(set(p.resolve() for p in files if p.is_file()))
+    return sorted(
+        set(
+            p.absolute()
+            for p in files
+            if not p.is_symlink()
+            and not is_windows_reparse_point(p)
+            and p.is_file()
+        )
+    )
+
+
+def cleanup_manifest_for_files(data_dir: Path, files: Iterable[Path]) -> list[dict]:
+    """Freeze validated cleanup targets without following symbolic links."""
+    data_dir = Path(data_dir).expanduser().resolve()
+    manifest: list[dict] = []
+    for path in sorted(Path(p).absolute() for p in files):
+        if path.is_symlink():
+            raise ValueError(f"Cleanup target must not be a symbolic link: {path}")
+        resolved = path.resolve(strict=True)
+        if resolved.parent != data_dir:
+            raise ValueError(f"Cleanup target is outside the data directory: {path}")
+        stat = path.stat()
+        manifest.append({
+            "name": path.name,
+            "path": str(path),
+            "size_bytes": int(stat.st_size),
+            "sha256": sha256_file(path),
+        })
+    return manifest
 
 
 def parse_duplicate_copy_name(path: Path) -> Optional[tuple[str, int]]:
@@ -1049,48 +1375,128 @@ def parse_duplicate_copy_name(path: Path) -> Optional[tuple[str, int]]:
     return base, int(match.group("index"))
 
 
+def _safe_discovery_walk(
+    root: Path, excluded_names: Iterable[str]
+) -> Iterable[tuple[Path, Path, list[str]]]:
+    """Yield safe ``os.walk`` entries without crossing reparse points.
+
+    Windows directory junctions are not consistently reported as symbolic
+    links by Python.  ``followlinks=False`` therefore is not sufficient on
+    its own: prune every logical child that is a link/reparse point and only
+    process paths whose resolved location remains below the canonical root.
+    """
+    canonical_root = Path(root).expanduser().resolve()
+    excluded = {str(name).casefold() for name in excluded_names}
+    for current, dirs, files in os.walk(
+        canonical_root, topdown=True, followlinks=False
+    ):
+        current_path = Path(current)
+        try:
+            if path_has_link_or_reparse_component(current_path, canonical_root):
+                dirs[:] = []
+                continue
+            current_resolved = current_path.resolve(strict=True)
+            current_resolved.relative_to(canonical_root)
+        except (OSError, ValueError):
+            dirs[:] = []
+            continue
+
+        safe_dirs: list[str] = []
+        for name in dirs:
+            candidate = current_path / name
+            if name.startswith(".") or name.casefold() in excluded:
+                continue
+            if path_has_link_or_reparse_component(candidate, canonical_root):
+                continue
+            try:
+                resolved = candidate.resolve(strict=True)
+                resolved.relative_to(canonical_root)
+            except (OSError, ValueError):
+                continue
+            safe_dirs.append(name)
+        dirs[:] = safe_dirs
+        yield current_path, current_resolved, files
+
+
+def _discovery_root(root: Path) -> Path:
+    """Validate a logical discovery root before resolving any links."""
+    logical_root = Path(root).expanduser().absolute()
+    if path_has_link_or_reparse_component(
+        logical_root, Path(logical_root.anchor)
+    ):
+        raise ValueError(
+            "Discovery root must not be a symbolic link or reparse-point."
+        )
+    return logical_root.resolve()
+
+
+def _safe_direct_cbf_files(directory: Path, canonical_root: Path) -> list[Path]:
+    """Return direct CBF files that remain regular, in-root entries."""
+    directory = Path(directory).expanduser().absolute()
+    if path_has_link_or_reparse_component(directory, canonical_root):
+        return []
+    try:
+        directory.resolve(strict=True).relative_to(canonical_root)
+    except (OSError, ValueError):
+        return []
+
+    files: list[Path] = []
+    for suffix in SUPPORTED_EXTENSIONS:
+        files.extend(directory.glob(f"*{suffix}"))
+    safe_files: list[Path] = []
+    for candidate in files:
+        if candidate.is_symlink() or is_windows_reparse_point(candidate):
+            continue
+        if path_has_link_or_reparse_component(candidate, canonical_root):
+            continue
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(canonical_root)
+        except (OSError, ValueError):
+            continue
+        if resolved.is_file():
+            safe_files.append(resolved)
+    return sorted(set(safe_files))
+
+
 def discover_cbf_data_dirs(root: Path, excluded_names: Optional[Iterable[str]] = None) -> list[Path]:
-    root = Path(root).expanduser().resolve()
+    root = _discovery_root(root)
     excluded = {name.lower() for name in AUTO_EXCLUDED_DIR_NAMES}
     if excluded_names:
         excluded.update(str(name).lower() for name in excluded_names)
 
     data_dirs: list[Path] = []
-    for cur, dirs, _files in os.walk(root):
-        dirs[:] = [
-            d for d in dirs
-            if not d.startswith(".")
-            and d.lower() not in excluded
-            and ".tmp_zero2sat_" not in d
-        ]
-        cur_path = Path(cur)
-        if direct_cbf_files(cur_path):
-            data_dirs.append(cur_path.resolve())
+    for cur_path, cur_resolved, dirs in _safe_discovery_walk(root, excluded):
+        dirs[:] = [d for d in dirs if ".tmp_zero2sat_" not in d.casefold()]
+        if _safe_direct_cbf_files(cur_path, root):
+            data_dirs.append(cur_resolved)
     return sorted(set(data_dirs))
 
 
 def discover_cbf_data_dirs_with_corrected_parents(root: Path, excluded_names: Optional[Iterable[str]] = None) -> list[Path]:
     """Find raw CBF data dirs plus parents that only contain an auto-corrected output dir."""
-    root = Path(root).expanduser().resolve()
-    excluded = {name.lower() for name in AUTO_EXCLUDED_DIR_NAMES}
-    if excluded_names:
-        excluded.update(str(name).lower() for name in excluded_names)
+    root = _discovery_root(root)
 
     data_dirs: set[Path] = set(discover_cbf_data_dirs(root, excluded_names=excluded_names))
-    for cur, dirs, _files in os.walk(root):
-        dirs[:] = [
-            d for d in dirs
-            if not d.startswith(".")
-            and d.lower() not in {DUPLICATE_QUARANTINE_DIR_NAME.lower(), "zero2sat_output", "cbf_zero2sat_output"}
-            and ".tmp_zero2sat_" not in d.lower()
-        ]
-        cur_path = Path(cur)
+    corrected_excluded = {
+        DUPLICATE_QUARANTINE_DIR_NAME.lower(),
+        "zero2sat_output",
+        "cbf_zero2sat_output",
+    }
+    for cur_path, cur_resolved, dirs in _safe_discovery_walk(root, corrected_excluded):
+        dirs[:] = [d for d in dirs if ".tmp_zero2sat_" not in d.casefold()]
         for d in dirs:
             if d.lower() != AUTO_OUTPUT_DIR_NAME.lower():
                 continue
             output_dir = cur_path / d
-            if direct_cbf_files(output_dir):
-                data_dirs.add(cur_path.resolve())
+            if path_has_link_or_reparse_component(output_dir, root):
+                continue
+            try:
+                output_dir.resolve(strict=True).relative_to(root)
+            except (OSError, ValueError):
+                continue
+            if _safe_direct_cbf_files(output_dir, root):
+                data_dirs.add(cur_resolved)
     return sorted(data_dirs)
 
 
@@ -1145,7 +1551,7 @@ def scan_cbf_dir_for_duplicate_downloads(
                     result.duplicate_sha256 = sha256_file(duplicate)
                     if result.original_sha256 == result.duplicate_sha256:
                         result.status = "duplicate_confirmed"
-                        result.action = "ready_to_quarantine"
+                        result.action = "report_only"
                     else:
                         result.status = "name_pattern_hash_mismatch"
                         result.error = "File names look duplicated, but SHA256 hashes differ."
@@ -1180,14 +1586,18 @@ def duplicate_cbf_counts(results: Iterable[DuplicateCbfResult]) -> dict[str, int
     result_list = list(results)
     return {
         "candidate_files": len(result_list),
-        "confirmed_duplicates": sum(1 for r in result_list if r.status in {"duplicate_confirmed", "quarantined"}),
-        "ready_to_quarantine": sum(1 for r in result_list if r.status == "duplicate_confirmed"),
-        "quarantined": sum(1 for r in result_list if r.status == "quarantined"),
+        "confirmed_duplicates": sum(1 for r in result_list if r.status == "duplicate_confirmed"),
+        "report_only_candidates": sum(1 for r in result_list if r.status == "duplicate_confirmed"),
+        # Retained for report-schema compatibility; automatic moves are disabled.
+        "ready_to_quarantine": 0,
+        "quarantined": 0,
         "hash_mismatch": sum(1 for r in result_list if r.status == "name_pattern_hash_mismatch"),
         "size_mismatch": sum(1 for r in result_list if r.status == "name_pattern_size_mismatch"),
         "orphan_candidates": sum(1 for r in result_list if r.status == "orphan_duplicate_name"),
-        "errors": sum(1 for r in result_list if r.status == "error" or r.action == "quarantine_failed"),
-        "total_duplicate_bytes": sum(int(r.size_bytes) for r in result_list if r.status in {"duplicate_confirmed", "quarantined"}),
+        "errors": sum(1 for r in result_list if r.status == "error"),
+        "total_duplicate_bytes": sum(
+            int(r.size_bytes) for r in result_list if r.status == "duplicate_confirmed"
+        ),
     }
 
 
@@ -1267,85 +1677,28 @@ def quarantine_duplicate_cbf_downloads(
     scan_results: Optional[Iterable[DuplicateCbfResult]] = None,
     progress_callback: Optional[Callable[[dict], None]] = None,
 ) -> tuple[list[DuplicateCbfResult], Path]:
+    """Report duplicate candidates without moving detector files.
+
+    The historical function name is retained for API compatibility. Moving a
+    source CBF, even to a recoverable quarantine directory, now requires an
+    explicit user-controlled process outside RingSentry.
+    """
     root = Path(root).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        raise ValueError("Duplicate-report root must be an existing directory.")
     if scan_results is None:
         scan_results, _summary_path = scan_duplicate_cbf_downloads(root)
-
-    updated: list[DuplicateCbfResult] = []
-    targets = [
-        r for r in scan_results
-        if r.status == "duplicate_confirmed" and r.action == "ready_to_quarantine"
-    ]
-    total_targets = len(targets)
-    moved = 0
-    target_index = 0
-
-    for result in scan_results:
-        current = DuplicateCbfResult(**asdict(result))
-        if not (current.status == "duplicate_confirmed" and current.action == "ready_to_quarantine"):
-            updated.append(current)
-            continue
-
-        target_index += 1
-        try:
-            data_dir = Path(current.data_dir).expanduser().resolve()
-            original = Path(current.original_file).expanduser().resolve()
-            duplicate = Path(current.duplicate_file).expanduser().resolve()
-            if duplicate.parent != data_dir:
-                raise ValueError("Duplicate CBF is not directly inside its recorded data directory.")
-            if not original.exists():
-                raise FileNotFoundError(f"Original CBF no longer exists: {original}")
-            if not duplicate.exists():
-                raise FileNotFoundError(f"Duplicate CBF no longer exists: {duplicate}")
-            if int(original.stat().st_size) != int(duplicate.stat().st_size):
-                current.status = "name_pattern_size_mismatch"
-                current.action = "report_only"
-                current.error = "Recheck before quarantine failed: file sizes differ."
-                updated.append(current)
-                continue
-            original_sha = sha256_file(original)
-            duplicate_sha = sha256_file(duplicate)
-            current.original_sha256 = original_sha
-            current.duplicate_sha256 = duplicate_sha
-            if original_sha != duplicate_sha:
-                current.status = "name_pattern_hash_mismatch"
-                current.action = "report_only"
-                current.error = "Recheck before quarantine failed: SHA256 hashes differ."
-                updated.append(current)
-                continue
-
-            quarantine_dir = data_dir / DUPLICATE_QUARANTINE_DIR_NAME
-            quarantine_dir.mkdir(parents=True, exist_ok=True)
-            destination = unique_quarantine_path(quarantine_dir, duplicate.name)
-            shutil.move(str(duplicate), str(destination))
-            current.status = "quarantined"
-            current.action = "moved_to_quarantine"
-            current.quarantine_path = str(destination)
-            current.error = ""
-            moved += 1
-        except Exception as exc:
-            current.status = "error"
-            current.action = "quarantine_failed"
-            current.error = f"{exc}\n{traceback.format_exc(limit=8)}"
-        updated.append(current)
-        if progress_callback:
-            progress_callback({
-                "phase": "duplicate_quarantine_file",
-                "file_index": target_index,
-                "total_files": total_targets,
-                "duplicate_file": current.duplicate_file,
-                "quarantine_path": current.quarantine_path,
-                "status": current.status,
-                "moved": moved,
-                **duplicate_cbf_counts(updated),
-            })
+    updated = [DuplicateCbfResult(**asdict(result)) for result in scan_results]
+    for current in updated:
+        current.action = "report_only"
+        current.quarantine_path = ""
 
     summary_path = write_duplicate_cbf_summary_csv(updated, root)
     if progress_callback:
         progress_callback({
             "phase": "duplicate_quarantine_done",
             "summary_path": str(summary_path),
-            "moved": moved,
+            "moved": 0,
             **duplicate_cbf_counts(updated),
         })
     return updated, summary_path
@@ -1422,6 +1775,7 @@ def group_duplicate_results_by_dir(results: Iterable[DuplicateCbfResult]) -> dic
 
 def duplicate_results_needing_review(results: Iterable[DuplicateCbfResult]) -> list[DuplicateCbfResult]:
     review_statuses = {
+        "duplicate_confirmed",
         "name_pattern_hash_mismatch",
         "name_pattern_size_mismatch",
         "orphan_duplicate_name",
@@ -1429,7 +1783,7 @@ def duplicate_results_needing_review(results: Iterable[DuplicateCbfResult]) -> l
     }
     return [
         r for r in results
-        if r.status in review_statuses or r.action == "quarantine_failed"
+        if r.status in review_statuses
     ]
 
 
@@ -1468,6 +1822,15 @@ def verify_original_repaired_pair_with_config(original_path: Path, repaired_path
             "original_shape": str(tuple(original.shape)),
             "repaired_shape": str(tuple(repaired.shape)),
         }
+    if original.dtype != repaired.dtype:
+        return {
+            "pass": False,
+            "reason": "dtype_mismatch",
+            "original_dtype": str(original.dtype),
+            "repaired_dtype": str(repaired.dtype),
+            "original_shape": str(tuple(original.shape)),
+            "repaired_shape": str(tuple(repaired.shape)),
+        }
     zero_mask, target_mask = make_target_mask(original, cfg)
     target_mask, ignored = apply_minor_zero_threshold(target_mask, cfg)
     non_target = ~target_mask
@@ -1501,6 +1864,8 @@ def validation_record_from_strict_check(original_path: Path, repaired_path: Path
         "original_mtime_ns": original_stat["mtime_ns"],
         "output_size_bytes": output_stat["size_bytes"],
         "output_mtime_ns": output_stat["mtime_ns"],
+        "original_sha256": sha256_file(original_path),
+        "output_sha256": sha256_file(repaired_path),
         "shape": check.get("original_shape", ""),
         "dtype": check.get("original_dtype", ""),
         "zero_pixels": int(check.get("zero_pixels", 0) or 0),
@@ -1545,19 +1910,35 @@ def evaluate_validation_index_fast_path(
         meta["index_status"] = "config_mismatch"
         meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
         return False, "config_mismatch", "Validation index repair-rule hash does not match current settings.", meta
-    if not index.get("trusted_for_cleanup"):
-        meta["index_status"] = "not_trusted_for_cleanup"
-        meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
-        return False, "not_trusted_for_cleanup", "Validation index is not marked trusted for cleanup.", meta
-
-    records = index.get("records") or []
-    if not records:
+    records = index.get("records")
+    if records == []:
         meta["index_status"] = "empty_index"
         meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
         return False, "empty_index", "Validation index has no file records.", meta
+    schema_error = validation_index_records_schema_error(records)
+    if schema_error:
+        meta["index_status"] = "record_schema_error"
+        meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
+        return False, "record_schema_error", schema_error, meta
+    for record in records:
+        if record.get("readback_validation_passed") is not True:
+            meta["index_status"] = "record_validation_failed"
+            meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
+            return False, "record_validation_failed", "A validation-index record is not verified.", meta
+    if not index.get("trusted_for_cleanup"):
+        meta["index_status"] = "advisory_index_matched"
 
-    original_names = {r.get("original_name", "") for r in records}
-    output_names = {r.get("output_name", "") for r in records}
+    original_name_list = [str(r["original_name"]) for r in records]
+    output_name_list = [str(r["output_name"]) for r in records]
+    if (
+        len(set(name.casefold() for name in original_name_list)) != len(records)
+        or len(set(name.casefold() for name in output_name_list)) != len(records)
+    ):
+        meta["index_status"] = "duplicate_record_name"
+        meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
+        return False, "duplicate_record_name", "Validation index contains duplicate file records.", meta
+    original_names = set(original_name_list)
+    output_names = set(output_name_list)
     if set(output_by_name) != output_names:
         meta["index_status"] = "output_name_mismatch"
         meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
@@ -1589,6 +1970,15 @@ def evaluate_validation_index_fast_path(
             meta["index_status"] = "output_stat_mismatch"
             meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
             return False, "output_stat_mismatch", f"Output CBF changed since validation index: {output_path.name}", meta
+        expected_output_sha256 = str(record.get("output_sha256") or "")
+        if not expected_output_sha256:
+            meta["index_status"] = "output_hash_missing"
+            meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
+            return False, "output_hash_missing", "Validation index lacks an output SHA-256 digest.", meta
+        if sha256_file(output_path) != expected_output_sha256:
+            meta["index_status"] = "output_hash_mismatch"
+            meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
+            return False, "output_hash_mismatch", f"Output CBF content changed since validation: {output_path.name}", meta
 
         if original_by_name:
             original_path = original_by_name.get(record.get("original_name", ""))
@@ -1609,18 +1999,30 @@ def evaluate_validation_index_fast_path(
                 meta["index_status"] = "original_stat_mismatch"
                 meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
                 return False, "original_stat_mismatch", f"Original CBF changed since validation index: {original_path.name}", meta
+            expected_original_sha256 = str(record.get("original_sha256") or "")
+            if not expected_original_sha256:
+                meta["index_status"] = "original_hash_missing"
+                meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
+                return False, "original_hash_missing", "Validation index lacks an original SHA-256 digest.", meta
+            if sha256_file(original_path) != expected_original_sha256:
+                meta["index_status"] = "original_hash_mismatch"
+                meta["fast_path_elapsed_s"] = round(time.time() - start, 4)
+                return False, "original_hash_mismatch", f"Original CBF content changed since validation: {original_path.name}", meta
             bytes_eligible += original_stat["size_bytes"]
         total_target += int(record.get("target_pixels", 0) or 0)
         ignored_zero += int(record.get("ignored_zero_pixels", 0) or 0)
 
     meta.update({
-        "index_status": "trusted",
+        "index_status": "advisory_index_matched",
         "fast_path_elapsed_s": round(time.time() - start, 4),
         "total_target_pixels": total_target,
         "ignored_zero_pixels": ignored_zero,
         "bytes_eligible_for_cleanup": bytes_eligible,
     })
-    return True, "trusted", "Validation index fast path passed.", meta
+    return False, "advisory_only", (
+        "Validation index matched current files but is advisory only; "
+        "strict pixel validation is still required."
+    ), meta
 
 
 def evaluate_corrected_output(
@@ -1673,16 +2075,9 @@ def evaluate_corrected_output(
         result.index_status = index_meta.get("index_status", index_status)
         result.fast_path_elapsed_s = float(index_meta.get("fast_path_elapsed_s", 0.0) or 0.0)
         result.index_path = str(index_meta.get("index_path") or result.index_path)
-        if ok:
-            result.validation_mode = "trusted_index_fast_path"
-            result.files_checked = 0
-            result.total_target_pixels = int(index_meta.get("total_target_pixels", 0) or 0)
-            result.ignored_zero_pixels = int(index_meta.get("ignored_zero_pixels", 0) or 0)
-            result.bytes_eligible_for_cleanup = int(index_meta.get("bytes_eligible_for_cleanup", bytes_eligible) or 0)
-            result.cleanup_eligible_reason = "trusted_validation_index_matched_current_files"
-            result.status = "valid_corrected_output" if original_by_name else "corrected_only_original_absent"
-            return result
-        result.error = "" if index_status in {"missing", "not_trusted_for_cleanup"} else index_message
+        result.error = "" if index_status in {
+            "missing", "advisory_only", "not_trusted_for_cleanup"
+        } else index_message
 
     if not original_by_name:
         total = len(output_by_name)
@@ -1757,6 +2152,14 @@ def evaluate_corrected_output(
     result.status = "valid_corrected_output"
     result.validation_mode = "strict_pixel_validation_once"
     result.cleanup_eligible_reason = "strict_pixel_validation_passed"
+    try:
+        result.cleanup_manifest = cleanup_manifest_for_files(
+            data_dir, original_by_name.values()
+        )
+    except Exception as exc:
+        result.status = "read_error"
+        result.error = str(exc)
+        return result
     result.strict_validation_elapsed_s = round(time.time() - strict_start, 4)
     result.error = ""
     if write_index and strict_records:
@@ -1765,7 +2168,7 @@ def evaluate_corrected_output(
             validation_mode=result.validation_mode,
             trusted_for_cleanup=True,
         )
-        result.index_status = "written_trusted"
+        result.index_status = "written_advisory"
         result.index_path = str(json_path)
     return result
 
@@ -1791,7 +2194,9 @@ def original_cleanup_counts(results: Iterable[OriginalCleanupResult]) -> dict[st
     result_list = list(results)
     return {
         "total_dirs": len(result_list),
-        "ready_to_delete": sum(1 for r in result_list if r.status == "ready_to_delete"),
+        "cleanup_candidates": sum(1 for r in result_list if r.status == "cleanup_candidate"),
+        "cleanup_disabled": sum(1 for r in result_list if r.status == "cleanup_disabled"),
+        "ready_to_delete": 0,
         "deleted_dirs": sum(1 for r in result_list if r.status == "deleted"),
         "already_cleaned": sum(1 for r in result_list if r.status == "already_cleaned"),
         "skipped_needs_review": sum(1 for r in result_list if r.status == "skipped_needs_review"),
@@ -1799,26 +2204,34 @@ def original_cleanup_counts(results: Iterable[OriginalCleanupResult]) -> dict[st
         "trusted_index_fast_path": sum(1 for r in result_list if r.validation_mode == "trusted_index_fast_path"),
         "strict_pixel_validation_once": sum(1 for r in result_list if r.validation_mode == "strict_pixel_validation_once"),
         "readable_output_scan": sum(1 for r in result_list if r.validation_mode == "readable_output_scan"),
-        "files_eligible_for_cleanup": sum(int(r.original_files) for r in result_list if r.status in {"ready_to_delete", "deleted"}),
+        "files_eligible_for_cleanup": 0,
         "files_deleted": sum(int(r.files_deleted) for r in result_list),
-        "bytes_eligible_for_cleanup": sum(int(r.bytes_eligible_for_cleanup) for r in result_list if r.status in {"ready_to_delete", "deleted"}),
+        "bytes_eligible_for_cleanup": 0,
         "bytes_deleted": sum(int(r.bytes_deleted) for r in result_list),
     }
 
 
-def delete_direct_original_cbfs(data_dir: Path) -> tuple[int, int, str]:
-    deleted_files = 0
-    deleted_bytes = 0
-    errors: list[str] = []
-    for path in direct_cbf_files(Path(data_dir)):
-        try:
-            size = int(path.stat().st_size)
-            path.unlink()
-            deleted_files += 1
-            deleted_bytes += size
-        except Exception as exc:
-            errors.append(f"{path}: {exc}")
-    return deleted_files, deleted_bytes, "; ".join(errors)
+def delete_direct_original_cbfs(
+    data_dir: Path,
+    cleanup_manifest: Optional[Iterable[dict]] = None,
+) -> tuple[int, int, str]:
+    """Refuse irreversible original-file removal.
+
+    A normal filesystem cannot make the final content check and unlink one
+    indivisible operation. RingSentry therefore reports cleanup candidates but
+    leaves archival or deletion to a separate, user-controlled process after
+    independent verification.
+    """
+    _ = (data_dir, cleanup_manifest)
+    return (0, 0, AUTOMATIC_CLEANUP_DISABLED_MESSAGE)
+
+
+def report_only_cleanup_status(
+    data_dir: Path,
+    cleanup_manifest: Iterable[dict],
+) -> tuple[int, int, str]:
+    """Compatibility wrapper for callers that previously requested deletion."""
+    return delete_direct_original_cbfs(data_dir, cleanup_manifest)
 
 
 def cleanup_corrected_original_cbfs(
@@ -1849,7 +2262,7 @@ def cleanup_corrected_original_cbfs(
             current = OriginalCleanupResult(
                 data_dir=str(data_dir),
                 output_dir=str(output_dir),
-                action="delete_original_cbf" if delete_original else "detect_only",
+                action="report_only",
                 status="skipped_no_output",
                 corrected_validation_status="missing_output",
                 original_files=len(direct_cbf_files(data_dir)),
@@ -1878,7 +2291,7 @@ def cleanup_corrected_original_cbfs(
         current = OriginalCleanupResult(
             data_dir=str(data_dir),
             output_dir=str(output_dir),
-            action="delete_original_cbf" if delete_original else "detect_only",
+            action="report_only",
             corrected_validation_status=evaluation.status,
             original_files=evaluation.original_files,
             output_files=evaluation.output_files,
@@ -1898,16 +2311,10 @@ def cleanup_corrected_original_cbfs(
             current.status = "already_cleaned"
         elif evaluation.status == "valid_corrected_output":
             if delete_original:
-                deleted_files, deleted_bytes, delete_error = delete_direct_original_cbfs(data_dir)
-                current.files_deleted = deleted_files
-                current.bytes_deleted = deleted_bytes
-                if delete_error:
-                    current.status = "delete_failed"
-                    current.error = delete_error
-                else:
-                    current.status = "deleted"
+                current.status = "cleanup_disabled"
+                current.error = AUTOMATIC_CLEANUP_DISABLED_MESSAGE
             else:
-                current.status = "ready_to_delete"
+                current.status = "cleanup_candidate"
         elif evaluation.status in {"missing_output", "no_output_files"}:
             current.status = "skipped_no_output"
         else:
@@ -2076,7 +2483,7 @@ def auto_process_cbf_tree(
                 cleanup_record = OriginalCleanupResult(
                     data_dir=data_dir_key,
                     output_dir=str(existing_output_dir),
-                    action="delete_original_cbf" if cleanup_original else "detect_only",
+                    action="report_only",
                     corrected_validation_status=evaluation.status,
                     original_files=evaluation.original_files,
                     output_files=evaluation.output_files,
@@ -2095,30 +2502,16 @@ def auto_process_cbf_tree(
                     cleanup_record.status = "already_cleaned"
                     result.cleanup_status = "already_cleaned"
                 elif cleanup_original:
-                    deleted_files, deleted_bytes, delete_error = delete_direct_original_cbfs(data_dir)
-                    cleanup_record.files_deleted = deleted_files
-                    cleanup_record.bytes_deleted = deleted_bytes
-                    result.original_files_deleted = deleted_files
-                    result.original_bytes_deleted = deleted_bytes
-                    if delete_error:
-                        cleanup_record.status = "delete_failed"
-                        cleanup_record.error = delete_error
-                        result.cleanup_status = "delete_failed"
-                        problem_results.append(ProblemFileResult(
-                            data_dir=data_dir_key,
-                            stage="original_cleanup",
-                            status="delete_failed",
-                            action="delete_original_cbf",
-                            error=delete_error,
-                        ))
-                    else:
-                        cleanup_record.status = "deleted"
-                        result.status = "corrected_usable_original_cleaned"
-                        result.cleanup_status = "deleted"
-                        result.notes = "Existing overexposure_corrected passed strict validation; original direct CBF files were deleted."
+                    cleanup_record.status = "cleanup_disabled"
+                    cleanup_record.error = AUTOMATIC_CLEANUP_DISABLED_MESSAGE
+                    result.cleanup_status = "report_only"
+                    result.notes = (
+                        "Existing overexposure_corrected passed strict validation; "
+                        "original files were retained and reported for independent review."
+                    )
                 else:
-                    cleanup_record.status = "ready_to_delete"
-                    result.cleanup_status = "ready_to_delete"
+                    cleanup_record.status = "cleanup_candidate"
+                    result.cleanup_status = "report_only"
 
                 cleanup_results.append(cleanup_record)
                 overexposure_results.append(AutoDirectoryResult(
@@ -2288,7 +2681,7 @@ def auto_process_cbf_tree(
                         cleanup_record = OriginalCleanupResult(
                             data_dir=data_dir_key,
                             output_dir=str(output_dir),
-                            action="delete_original_cbf",
+                            action="report_only",
                             corrected_validation_status=evaluation.status,
                             original_files=evaluation.original_files,
                             output_files=evaluation.output_files,
@@ -2304,27 +2697,13 @@ def auto_process_cbf_tree(
                             error=evaluation.error,
                         )
                         if evaluation.status == "valid_corrected_output":
-                            deleted_files, deleted_bytes, delete_error = delete_direct_original_cbfs(data_dir)
-                            cleanup_record.files_deleted = deleted_files
-                            cleanup_record.bytes_deleted = deleted_bytes
-                            result.original_files_deleted = deleted_files
-                            result.original_bytes_deleted = deleted_bytes
-                            if delete_error:
-                                cleanup_record.status = "delete_failed"
-                                cleanup_record.error = delete_error
-                                result.cleanup_status = "delete_failed"
-                                problem_results.append(ProblemFileResult(
-                                    data_dir=data_dir_key,
-                                    stage="original_cleanup",
-                                    status="delete_failed",
-                                    action="delete_original_cbf",
-                                    error=delete_error,
-                                ))
-                            else:
-                                cleanup_record.status = "deleted"
-                                result.status = "corrected_usable_original_cleaned"
-                                result.cleanup_status = "deleted"
-                                result.notes = "Use overexposure_corrected for downstream processing; original direct CBF files were deleted."
+                            cleanup_record.status = "cleanup_disabled"
+                            cleanup_record.error = AUTOMATIC_CLEANUP_DISABLED_MESSAGE
+                            result.cleanup_status = "report_only"
+                            result.notes = (
+                                "Use overexposure_corrected for downstream processing; "
+                                "original files were retained for independent review."
+                            )
                         else:
                             cleanup_record.status = "skipped_needs_review"
                             result.cleanup_status = "skipped_needs_review"
@@ -2469,8 +2848,7 @@ def copy_unmodified_from_scan_result(src: Path, cfg: ProcessConfig, scan_result:
         if final_path.exists() and not cfg.overwrite_output and not cfg.overwrite_original:
             result.status = "output_exists"
             return result
-        final_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, final_path)
+        copy_file_atomically(src, final_path, cfg)
         if cfg.compute_sha256:
             if not result.original_sha256:
                 result.original_sha256 = sha256_file(src)
@@ -2538,23 +2916,37 @@ def run_repair_from_scan_results(
     return results, summary
 
 
-def clean_auto_output_dir(output_dir: Path) -> None:
-    output_dir = Path(output_dir)
+def clean_auto_output_dir(output_dir: Path, source_dir: Optional[Path] = None) -> None:
+    """Validate the auto-output location without deleting existing files.
+
+    ``source_dir`` is required so an accidental one-argument call cannot turn
+    an arbitrary CBF data directory into a cleanup target.  Existing output is
+    retained; individual files are updated later through atomic replacement.
+    """
+    if source_dir is None:
+        raise ValueError("Source directory is required for guarded output cleanup.")
+    logical_source_dir = Path(source_dir).expanduser().absolute()
+    logical_output_dir = Path(output_dir).expanduser().absolute()
+    if path_has_link_or_reparse_component(
+        logical_source_dir, logical_source_dir
+    ):
+        raise ValueError("Source directory must not be a symbolic link or reparse-point.")
+    source_dir = logical_source_dir.resolve()
+    output_dir = logical_output_dir
+    if output_dir.name.casefold() != AUTO_OUTPUT_DIR_NAME.casefold():
+        raise ValueError(
+            f"Refusing to clean a directory not named {AUTO_OUTPUT_DIR_NAME!r}."
+        )
+    if output_dir.parent != logical_source_dir:
+        raise ValueError("Auto output directory must be the named child of its source directory.")
+    if path_has_link_or_reparse_component(output_dir, logical_source_dir):
+        raise ValueError("Refusing to clean a symbolic-link or reparse-point output directory.")
     if not output_dir.exists():
         return
-    for item in output_dir.iterdir():
-        if not item.is_file():
-            continue
-        name = item.name
-        lower = name.lower()
-        generated_report = (
-            lower.startswith("cbf_zero2sat_")
-            and lower.endswith((".csv", ".html", ".json"))
-        )
-        generated_summary = lower == "auto_overexposure_summary.csv"
-        generated_index = lower in {VALIDATION_INDEX_JSON_NAME.lower(), VALIDATION_INDEX_CSV_NAME.lower()}
-        if lower.endswith(".cbf") or generated_report or generated_summary or generated_index:
-            item.unlink()
+    canonical_output = output_dir.resolve(strict=True)
+    expected_output = source_dir / AUTO_OUTPUT_DIR_NAME
+    if canonical_output != expected_output:
+        raise ValueError("Auto output directory did not resolve to the expected direct child.")
 
 
 def repair_cbf_dir_to_local_output(data_dir: Path, output_dir: Path, cfg: ProcessConfig,
@@ -2570,7 +2962,7 @@ def repair_cbf_dir_to_local_output(data_dir: Path, output_dir: Path, cfg: Proces
     if output_dir.name.lower() != AUTO_OUTPUT_DIR_NAME.lower():
         raise ValueError(f"Auto output directory must be named {AUTO_OUTPUT_DIR_NAME!r}.")
     if clean_existing:
-        clean_auto_output_dir(output_dir)
+        clean_auto_output_dir(output_dir, data_dir)
     repair_cfg = clone_config_for_dir(cfg, data_dir, output_dir, dry_run=False)
     if scan_results is None:
         results, summary = run_batch(repair_cfg, action="repair", progress_callback=progress_callback)
@@ -2654,7 +3046,7 @@ def auto_overexposure_repair(root: Path, base_cfg: ProcessConfig,
                     cleanup_record = OriginalCleanupResult(
                         data_dir=str(data_dir),
                         output_dir=str(existing_output_dir),
-                        action="delete_original_cbf" if cleanup_original else "detect_only",
+                        action="report_only",
                         corrected_validation_status=evaluation.status,
                         original_files=evaluation.original_files,
                         output_files=evaluation.output_files,
@@ -2669,22 +3061,13 @@ def auto_overexposure_repair(root: Path, base_cfg: ProcessConfig,
                         fast_path_elapsed_s=evaluation.fast_path_elapsed_s,
                     )
                     status = "corrected_only_original_absent" if evaluation.status == "corrected_only_original_absent" else "already_corrected"
-                    deleted_files = 0
-                    deleted_bytes = 0
                     if evaluation.status == "corrected_only_original_absent":
                         cleanup_record.status = "already_cleaned"
                     elif cleanup_original:
-                        deleted_files, deleted_bytes, delete_error = delete_direct_original_cbfs(data_dir)
-                        cleanup_record.files_deleted = deleted_files
-                        cleanup_record.bytes_deleted = deleted_bytes
-                        if delete_error:
-                            cleanup_record.status = "delete_failed"
-                            cleanup_record.error = delete_error
-                        else:
-                            cleanup_record.status = "deleted"
-                            status = "corrected_usable_original_cleaned"
+                        cleanup_record.status = "cleanup_disabled"
+                        cleanup_record.error = AUTOMATIC_CLEANUP_DISABLED_MESSAGE
                     else:
-                        cleanup_record.status = "ready_to_delete"
+                        cleanup_record.status = "cleanup_candidate"
                     cleanup_results.append(cleanup_record)
                     result = AutoDirectoryResult(
                         data_dir=str(data_dir),
@@ -2695,7 +3078,7 @@ def auto_overexposure_repair(root: Path, base_cfg: ProcessConfig,
                         ignored_zero_pixels=evaluation.ignored_zero_pixels,
                         repaired_files=0,
                         copied_unmodified=0,
-                        errors=1 if cleanup_record.status == "delete_failed" else 0,
+                        errors=0,
                         error=cleanup_record.error,
                     )
                     auto_results.append(result)
@@ -2805,7 +3188,7 @@ def auto_overexposure_repair(root: Path, base_cfg: ProcessConfig,
                 cleanup_record = OriginalCleanupResult(
                     data_dir=str(data_dir),
                     output_dir=str(output_dir),
-                    action="delete_original_cbf",
+                    action="report_only",
                     corrected_validation_status=evaluation.status,
                     original_files=evaluation.original_files,
                     output_files=evaluation.output_files,
@@ -2821,17 +3204,9 @@ def auto_overexposure_repair(root: Path, base_cfg: ProcessConfig,
                     error=evaluation.error,
                 )
                 if evaluation.status == "valid_corrected_output":
-                    deleted_files, deleted_bytes, delete_error = delete_direct_original_cbfs(data_dir)
-                    cleanup_record.files_deleted = deleted_files
-                    cleanup_record.bytes_deleted = deleted_bytes
-                    if delete_error:
-                        cleanup_record.status = "delete_failed"
-                        cleanup_record.error = delete_error
-                        result.errors = max(result.errors, 1)
-                        result.error = delete_error
-                    else:
-                        cleanup_record.status = "deleted"
-                        result.status = "corrected_usable_original_cleaned"
+                    cleanup_record.status = "cleanup_disabled"
+                    cleanup_record.error = AUTOMATIC_CLEANUP_DISABLED_MESSAGE
+                    result.error = AUTOMATIC_CLEANUP_DISABLED_MESSAGE
                 else:
                     cleanup_record.status = "skipped_needs_review"
                     result.errors = max(result.errors, 1)

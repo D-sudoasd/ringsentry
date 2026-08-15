@@ -15,7 +15,7 @@
       <text x="276" fill="#6E747C">REPORT</text>
       <text x="360" fill="#6EC1FF">PREFLIGHT</text>
     </g>
-    <text y="270" fill="#5A6068" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">DOI 10.5281/zenodo.19602728 · no silent damage</text>
+    <text y="270" fill="#858C95" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">DOI 10.5281/zenodo.19602728 · no silent damage</text>
   </g>
   <g transform="translate(740 48)" fill="none" stroke="#DDE0E3" stroke-width="1.5">
     <rect width="400" height="264" fill="#0B0D10" stroke="#262A30"/>
@@ -25,7 +25,7 @@
     <circle cx="200" cy="118" r="32" stroke="#B8C8D8" opacity="0.55"/>
     <circle cx="200" cy="118" r="4" fill="#E8C36A" stroke="none"/>
     <rect x="118" y="48" width="164" height="140" stroke="#8FE3B8" stroke-dasharray="6 5"/>
-    <text x="28" y="248" fill="#5A6068" stroke="none" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">preview → preflight → batch → run_report</text>
+    <text x="28" y="248" fill="#858C95" stroke="none" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">preview → preflight → batch → run_report</text>
   </g>
-  <text x="1144" y="336" text-anchor="end" fill="#4A5058" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">D-sudoasd / ringsentry</text>
+  <text x="1144" y="336" text-anchor="end" fill="#7A8088" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12">D-sudoasd / ringsentry</text>
 </svg>
