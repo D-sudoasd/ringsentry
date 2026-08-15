@@ -115,6 +115,15 @@ def test_python_classifiers_cover_supported_ci_versions():
         assert f"Programming Language :: Python :: {version}" in classifiers
 
 
+def test_test_extra_installs_the_no_isolation_build_backend():
+    pyproject = tomllib.loads(
+        (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    test_dependencies = set(pyproject["project"]["optional-dependencies"]["test"])
+
+    assert "setuptools>=61.0" in test_dependencies
+
+
 def test_package_readme_is_self_contained_for_index_rendering():
     pyproject = tomllib.loads(
         (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
