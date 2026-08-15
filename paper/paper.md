@@ -56,7 +56,7 @@ RingSentry records the numerical transformations applied to each detector image 
 
 # Software availability
 
-RingSentry is distributed from [GitHub](https://github.com/D-sudoasd/ringsentry) under the MIT License. The source metadata identify version 7.0.0, while the public tags and version-specific Zenodo archive still identify v6.0.1 as verified on 12 August 2026. Before submission, the reviewed source commit, public tag, GitHub release, and version-specific archive must identify the same revision. The repository includes installation instructions, a headless synthetic example, core API documentation, contribution guidance, issue templates, and tests.
+RingSentry is distributed from [GitHub](https://github.com/D-sudoasd/ringsentry) under the MIT License. The public `joss-submission` review branch identifies version 7.0.0, while the latest tagged GitHub release and version-specific Zenodo archive remain at v6.0.1 as verified on 15 August 2026. Upon successful completion of review, the authors will create a matching tagged release and archive, then report the version and archive DOI in the review thread. The repository includes installation instructions, a headless synthetic example, core API documentation, contribution guidance, issue templates, and tests.
 
 # AI usage disclosure
 
