@@ -858,11 +858,9 @@ def validate_output_path(src: Path, output_path: Path, cfg: ProcessConfig) -> No
         raise ValueError(
             "Output directory path must not contain a symbolic link or reparse-point."
         )
-    try:
-        logical_output.relative_to(output_root)
-    except ValueError as exc:
-        raise ValueError("Output path is outside the configured output directory.") from exc
-    if path_has_link_or_reparse_component(logical_output.parent, output_root):
+    if path_has_link_or_reparse_component(
+        logical_output.parent, Path(logical_output.anchor)
+    ):
         raise ValueError(
             "Output parent path must not contain a symbolic link or reparse-point."
         )

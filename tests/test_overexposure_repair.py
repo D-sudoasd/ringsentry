@@ -456,7 +456,7 @@ class OverexposureRepairTests(unittest.TestCase):
             with mock.patch.object(
                 repair,
                 "is_windows_reparse_point",
-                side_effect=lambda path: Path(path) == output_dir,
+                side_effect=lambda path: Path(path).resolve() == output_dir.resolve(),
             ):
                 with self.assertRaisesRegex(ValueError, "reparse-point"):
                     repair.output_path_for(source, cfg)
