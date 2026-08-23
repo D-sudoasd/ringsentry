@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -319,7 +321,7 @@ def _write_xy_stream(
     return total_points
 
 
-def save_array(
+def _save_array_payload(
     arr: np.ndarray,
     out_path: Path,
     fmt: str,
@@ -381,3 +383,81 @@ def save_array(
             raise ValueError('\u4E0D\u652F\u6301\u7684\u8F93\u51FA\u683C\u5F0F: ' + str(fmt))
     except Exception as e:
         return (False, str(e), 0)
+
+
+def _normalise_output_path(out_path: Path, fmt: str) -> Path:
+    """Give extension-sensitive writers the suffix they require."""
+    out_path = Path(out_path)
+    if str(fmt).lower() == "npy" and not out_path.suffix:
+        return out_path.with_name(f"{out_path.name}.npy")
+    return out_path
+
+
+def save_array(
+    arr: np.ndarray,
+    out_path: Path,
+    fmt: str,
+    xy_header=True,
+    xy_one_based=False,
+    xy_skip_zeros=True,
+    xy_zero_tol=0.0,
+    xy_y_axis_origin: str = "top-left",
+    cancellation_event: threading.Event = None,
+    preserve_dtype: bool = True,
+    metadata: Optional[Dict[str, Any]] = None,
+    png_options: Optional[Dict[str, Any]] = None,
+) -> tuple:
+    """Write an output through a same-directory temporary file.
+
+    The existing public API is retained.  A successful, non-cancelled payload
+    is published with ``os.replace``; failures and cancellation only remove
+    the temporary file, so an existing final output remains untouched.
+    """
+    out_path = _normalise_output_path(out_path, fmt)
+    temp_path = None
+    try:
+        if cancellation_event and cancellation_event.is_set():
+            return (False, "CANCELLED before write", 0)
+
+        # Keep the final suffix so np.save does not append a second ``.npy``.
+        # The temporary file lives beside the destination for same-volume
+        # atomic replacement on Windows and POSIX.
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix=f".{out_path.name}.",
+            suffix=out_path.suffix,
+            dir=str(out_path.parent),
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+
+        success, message, points = _save_array_payload(
+            arr,
+            temp_path,
+            fmt,
+            xy_header=xy_header,
+            xy_one_based=xy_one_based,
+            xy_skip_zeros=xy_skip_zeros,
+            xy_zero_tol=xy_zero_tol,
+            xy_y_axis_origin=xy_y_axis_origin,
+            cancellation_event=cancellation_event,
+            preserve_dtype=preserve_dtype,
+            metadata=metadata,
+            png_options=png_options,
+        )
+        if not success:
+            return (False, message, points)
+        if cancellation_event and cancellation_event.is_set():
+            return (False, "CANCELLED during write", points)
+
+        os.replace(str(temp_path), str(out_path))
+        temp_path = None
+        return (True, message, points)
+    except Exception as e:
+        return (False, str(e), 0)
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except FileNotFoundError:
+                pass

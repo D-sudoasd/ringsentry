@@ -163,6 +163,99 @@ class OverexposureRepairTests(unittest.TestCase):
             "RingSentry v7.0.0 — CBF Zero2Sat overexposure repair",
         )
 
+    def test_gui_build_config_rejects_blank_output_directory(self):
+        if find_spec("tkinter") is None:
+            self.skipTest("tkinter is not installed")
+
+        import gui.tabs.overexposure_tab as tab
+
+        class Var:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        with tempfile.TemporaryDirectory() as tmp:
+            input_dir = Path(tmp) / "input"
+            input_dir.mkdir()
+            view = object.__new__(tab.OverexposureRepairTab)
+            view.input_dir = Var(str(input_dir))
+            view.output_dir = Var("   ")
+            view.recursive = Var(True)
+            view.skip_output_dir = Var(True)
+            view.preserve_subfolders = Var(True)
+            view.suffix = Var("_zero2sat")
+            view.overwrite_output = Var(True)
+            view.copy_unmodified = Var(False)
+            view.mode = Var("all_zero")
+            view.zero_value = Var("0")
+            view.replacement_value = Var("32766")
+            view.bright_threshold = Var("20000")
+            view.radius = Var("3")
+            view.verify_after_write = Var(True)
+            view.compute_sha256 = Var(False)
+            view.generate_html_report = Var(False)
+            view.workers = Var("1")
+            view.dry_run = Var(True)
+            view.project_name = Var("")
+            view.operator = Var("")
+            view.sample = Var("")
+            view.beamline = Var("")
+            view.detector = Var("")
+            view.experiment_date = Var("")
+            view.notes_text = mock.Mock()
+            view.notes_text.get.return_value = ""
+
+            with self.assertRaisesRegex(ValueError, "请指定输出文件夹"):
+                view.build_config()
+
+    def test_gui_build_config_rejects_blank_input_directory(self):
+        if find_spec("tkinter") is None:
+            self.skipTest("tkinter is not installed")
+
+        import gui.tabs.overexposure_tab as tab
+
+        class Var:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "output"
+            view = object.__new__(tab.OverexposureRepairTab)
+            view.input_dir = Var("   ")
+            view.output_dir = Var(str(output_dir))
+            view.recursive = Var(True)
+            view.skip_output_dir = Var(True)
+            view.preserve_subfolders = Var(True)
+            view.suffix = Var("_zero2sat")
+            view.overwrite_output = Var(True)
+            view.copy_unmodified = Var(False)
+            view.mode = Var("all_zero")
+            view.zero_value = Var("0")
+            view.replacement_value = Var("32766")
+            view.bright_threshold = Var("20000")
+            view.radius = Var("3")
+            view.verify_after_write = Var(True)
+            view.compute_sha256 = Var(False)
+            view.generate_html_report = Var(False)
+            view.workers = Var("1")
+            view.dry_run = Var(True)
+            view.project_name = Var("")
+            view.operator = Var("")
+            view.sample = Var("")
+            view.beamline = Var("")
+            view.detector = Var("")
+            view.experiment_date = Var("")
+            view.notes_text = mock.Mock()
+            view.notes_text.get.return_value = ""
+
+            with self.assertRaisesRegex(ValueError, "请指定输入文件夹"):
+                view.build_config()
+
     def test_gui_defaults_to_dry_run(self):
         if find_spec("tkinter") is None:
             self.skipTest("tkinter is not installed")
@@ -214,6 +307,130 @@ class OverexposureRepairTests(unittest.TestCase):
 
             self.assertEqual(results, [])
             self.assertEqual(summary.total_files, 0)
+
+    def test_same_input_and_output_with_suffix_keeps_scan_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_dir = Path(tmp) / "input"
+            input_dir.mkdir()
+            source = input_dir / "sample.cbf"
+            write_cbf(source, np.array([[1, 0]], dtype=np.int32))
+
+            cfg = repair.ProcessConfig(
+                input_dir=input_dir,
+                output_dir=input_dir,
+                recursive=True,
+                skip_output_dir=True,
+                preserve_subfolders=False,
+                suffix="_fixed",
+                overwrite_output=True,
+                overwrite_original=False,
+                copy_unmodified=False,
+                generate_html_report=False,
+            ).normalized()
+            results, summary = repair.run_batch(cfg, action="scan")
+
+            self.assertEqual(summary.total_files, 1)
+            self.assertEqual([Path(result.input_file) for result in results], [source.resolve()])
+
+    def test_same_input_and_output_skips_generated_suffix_but_keeps_standalone_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_dir = Path(tmp) / "input"
+            input_dir.mkdir()
+            source = input_dir / "sample.cbf"
+            write_cbf(source, np.array([[1, 0]], dtype=np.int32))
+
+            cfg = repair.ProcessConfig(
+                input_dir=input_dir,
+                output_dir=input_dir,
+                recursive=True,
+                skip_output_dir=True,
+                preserve_subfolders=False,
+                suffix="_fixed",
+                overwrite_output=True,
+                overwrite_original=False,
+                copy_unmodified=False,
+                generate_html_report=False,
+            ).normalized()
+            repair.run_batch(cfg, action="repair")
+            generated = input_dir / "sample_fixed.cbf"
+            self.assertTrue(generated.exists())
+
+            standalone_source = input_dir / "original_fixed.cbf"
+            write_cbf(standalone_source, np.array([[2, 3]], dtype=np.int32))
+
+            results, summary = repair.run_batch(cfg, action="scan")
+
+            self.assertEqual(summary.total_files, 2)
+            self.assertEqual(
+                {Path(result.input_file).name for result in results},
+                {source.name, standalone_source.name},
+            )
+            self.assertNotIn(generated.resolve(), {Path(result.input_file) for result in results})
+
+    def test_scan_skips_only_output_strict_subdirectory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            input_dir = tmp / "input"
+            input_dir.mkdir()
+            write_cbf(input_dir / "source.cbf", np.array([[1, 2]], dtype=np.int32))
+
+            output_child = input_dir / "output"
+            output_child.mkdir()
+            write_cbf(output_child / "generated.cbf", np.array([[3, 4]], dtype=np.int32))
+            self.assertEqual(
+                repair.iter_cbf_files(input_dir, output_child, recursive=True),
+                [(input_dir / "source.cbf").resolve()],
+            )
+
+            output_ancestor = tmp / "ancestor"
+            output_ancestor.mkdir()
+            discovered = repair.iter_cbf_files(
+                input_dir, output_ancestor, recursive=True
+            )
+            self.assertEqual(
+                discovered,
+                sorted(
+                    [
+                        (input_dir / "source.cbf").resolve(),
+                        (output_child / "generated.cbf").resolve(),
+                    ]
+                ),
+            )
+
+    def test_preserve_subfolders_false_rejects_duplicate_output_mapping_before_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            input_dir = tmp / "input"
+            first_dir = input_dir / "first"
+            second_dir = input_dir / "second"
+            first_dir.mkdir(parents=True)
+            second_dir.mkdir()
+            first_source = first_dir / "same.cbf"
+            second_source = second_dir / "same.cbf"
+            write_cbf(first_source, np.array([[0, 1]], dtype=np.int32))
+            write_cbf(second_source, np.array([[0, 2]], dtype=np.int32))
+            output_dir = tmp / "output"
+            cfg = repair.ProcessConfig(
+                input_dir=input_dir,
+                output_dir=output_dir,
+                recursive=True,
+                skip_output_dir=True,
+                preserve_subfolders=False,
+                suffix="",
+                overwrite_output=True,
+                overwrite_original=False,
+                copy_unmodified=True,
+                workers=4,
+                generate_html_report=False,
+            ).normalized()
+
+            with self.assertRaisesRegex(ValueError, "Output mapping collisions") as raised:
+                repair.run_batch(cfg, action="repair")
+
+            message = str(raised.exception)
+            self.assertIn(str(first_source.resolve()), message)
+            self.assertIn(str(second_source.resolve()), message)
+            self.assertFalse(output_dir.exists())
 
     def test_config_rejects_original_file_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:

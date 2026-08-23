@@ -1,7 +1,5 @@
 """Worker function for threaded batch processing."""
 
-from pathlib import Path
-
 import numpy as np
 
 from .quality import analyze_image_quality, quality_summary_line
@@ -9,7 +7,13 @@ from .processing import processing_is_identity
 from .loader import load_image_with_info
 from .processing import apply_processing
 from .writer import save_array
-from .utils import get_output_base_name, summarize_array_stats
+from .utils import summarize_array_stats
+from .output_safety import (
+    canonical_output_path,
+    ensure_output_directory,
+    release_output_reservation,
+    worker_output_path,
+)
 
 
 def _processing_risk_logs(file_name: str, arr, proc_opts: dict) -> list:
@@ -59,17 +63,29 @@ def process_one_file(args):
         (file_path, rel_path, root, outroot, formats,
          xy_opts, png_opts, h5_path, proc_opts, cancellation_event, overwrite)
     """
+    output_plan = None
     if len(args) == 10:
         (
             file_path, rel_path, root, outroot, formats,
             xy_opts, h5_path, proc_opts, cancellation_event, overwrite
         ) = args
         png_opts = {}
-    else:
+    elif len(args) == 11:
         (
             file_path, rel_path, root, outroot, formats,
             xy_opts, png_opts, h5_path, proc_opts, cancellation_event, overwrite
         ) = args
+    elif len(args) == 12:
+        (
+            file_path, rel_path, root, outroot, formats,
+            xy_opts, png_opts, h5_path, proc_opts, cancellation_event, overwrite,
+            output_plan,
+        ) = args
+    else:
+        raise ValueError(
+            "process_one_file expects 10, 11, or 12 arguments; "
+            f"got {len(args)}"
+        )
     logs = []
 
     if cancellation_event.is_set():
@@ -146,13 +162,28 @@ def process_one_file(args):
         if cancellation_event.is_set():
             logs.append(f"Cancelled {file_path.name} [{fmt}]")
             break
+        reservation_path = None
+        out_path = None
         try:
-            out_dir = Path(outroot) / rel_path.parent / fmt
-            out_dir.mkdir(parents=True, exist_ok=True)
-
-            ext = {'xycsv': 'csv', 'xydat': 'dat'}.get(fmt, fmt)
-            out_path = out_dir / f"{get_output_base_name(file_path)}.{ext}"
-
+            ensure_output_directory(outroot, rel_path.parent, fmt)
+            canonical_path = canonical_output_path(
+                file_path, rel_path, outroot, fmt
+            )
+            out_path = worker_output_path(
+                file_path,
+                rel_path,
+                outroot,
+                fmt,
+                output_plan=output_plan,
+                avoid_existing=bool(output_plan is None and overwrite),
+            )
+            if output_plan is None:
+                reservation_path = out_path
+            if out_path.name != canonical_path.name:
+                logs.append(
+                    f"INFO: {file_path.name} [{fmt}] output name "
+                    f"disambiguated -> {out_path.name}"
+                )
             if out_path.exists() and not overwrite:
                 logs.append(
                     f"SKIPPED: {file_path.name} [{fmt}] -> \u8F93\u51FA\u5DF2\u5B58\u5728"
@@ -186,21 +217,23 @@ def process_one_file(args):
                 png_options=png_opts,
             )
 
-            if cancellation_event.is_set():
-                logs.append(f"CANCELLED during write: {file_path.name} [{fmt}]")
-                if out_path.exists():
-                    out_path.unlink()
-            elif success:
+            # A successful writer has already atomically published the final
+            # path.  Cancellation can race immediately afterwards and must not
+            # relabel that committed result.
+            if success:
                 mode = "RAW" if preserve_dtype else "PROC"
                 detail = f"; {msg}" if msg and msg != "OK" else ""
                 logs.append(
                     f"SUCCESS: {file_path.name} [{fmt}/{mode}] -> "
                     f"{out_path} ({points} points{detail})"
                 )
+            elif str(msg).upper().startswith("CANCELLED"):
+                logs.append(f"CANCELLED during write: {file_path.name} [{fmt}]")
             else:
                 logs.append(f"FAILED: {file_path.name} [{fmt}] -> {msg}")
-                if out_path.exists():
-                    out_path.unlink()
         except Exception as e:
             logs.append(f"FAILED: {file_path.name} [{fmt}] -> {e}")
+        finally:
+            if reservation_path is not None:
+                release_output_reservation(reservation_path, file_path)
     return logs

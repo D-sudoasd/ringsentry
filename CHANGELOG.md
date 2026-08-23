@@ -44,6 +44,15 @@ version-specific Zenodo archive. On release day, change this heading to
 
 ### Changed
 
+- Made the main window, previews, gallery, and calibration dialog fit the
+  current screen; added scoped keyboard and cross-platform scrolling, keyboard
+  tooltips, and WCAG-AA status text colors.
+- Added an explainable Automatic QC suggestion preview with before/after values
+  and explicit confirmation; hot-pixel suggestions now require spatially
+  isolated extreme candidates rather than contiguous bright regions.
+- Made Q-calculator results distinguish physical validity from detector
+  visibility, keep out-of-range rows, limit dense inline labels, and refresh
+  the visualization after restoring saved settings.
 - Renamed the project from **2D Diffraction Ring Preprocessor** to
   **RingSentry**, aligned package/citation/Zenodo metadata and runtime software
   identifiers, and added the `ringsentry` console entry point while retaining
@@ -63,6 +72,17 @@ version-specific Zenodo archive. On release day, change this heading to
 
 ### Fixed
 
+- Planned output names for the full batch before starting workers, protected
+  standard exports with atomic publication, and prevented same-stem inputs,
+  cancellation, or failed writes from silently destroying another result.
+- Corrected batch outcome/report classification, separated `NaN` and signed
+  infinity counts, scoped reports to the current run, and retained preflight
+  warnings for manual review.
+- Prevented CBF repair from accepting an empty output directory or flattening
+  colliding names, and kept same-directory scans meaningful when a suffix is
+  explicitly configured.
+- Kept gallery refresh generations separate, preserved thumbnail aspect ratio
+  and target-file identity, and restored repeated preview line selection.
 - Preserved IEEE `NaN` and infinities in floating NPY, EDF, and TIFF exports;
   CSV/DAT compatibility replacement now logs per-category counts.
 - Expanded run reports with input files, worker count, preset, overwrite,

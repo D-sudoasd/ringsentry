@@ -94,12 +94,19 @@ def summarize_array_stats(arr: np.ndarray) -> str:
     finite = np.isfinite(a)
     total = int(a.size)
     finite_n = int(np.count_nonzero(finite))
-    nan_n = total - finite_n
+    nan_n = int(np.count_nonzero(np.isnan(a)))
+    posinf_n = int(np.count_nonzero(np.isposinf(a)))
+    neginf_n = int(np.count_nonzero(np.isneginf(a)))
+    nonfinite_n = total - finite_n
+    counts = (
+        f"nan={nan_n}, posinf={posinf_n}, neginf={neginf_n}, "
+        f"nonfinite={nonfinite_n}"
+    )
     if finite_n == 0:
-        return f"shape={a.shape}, finite=0/{total}, nan={nan_n}"
+        return f"shape={a.shape}, finite=0/{total}, {counts}"
     vals = a[finite]
     return (
-        f"shape={a.shape}, finite={finite_n}/{total}, nan={nan_n}, "
+        f"shape={a.shape}, finite={finite_n}/{total}, {counts}, "
         f"min={float(np.min(vals)):.4g}, max={float(np.max(vals)):.4g}, "
         f"mean={float(np.mean(vals)):.4g}, std={float(np.std(vals)):.4g}"
     )

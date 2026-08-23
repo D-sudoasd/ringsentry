@@ -97,11 +97,16 @@ class DiffractionModel:
         theta = math.asin(ratio)
         two_theta = 2.0 * theta
 
-        if abs((math.pi / 2.0) - two_theta) < 1e-6:
+        # A plane detector only covers the forward branch of the projection:
+        # tan(2theta) must be finite and non-negative.  Values at or beyond
+        # 90 degrees otherwise produce a negative/invalid detector radius.
+        if two_theta >= (math.pi / 2.0):
             return 0.0, 0.0, 0.0, False
 
         r_mm = distance_mm * math.tan(two_theta)
         r_px = r_mm / pixel_size_mm
+        if r_mm < 0 or r_px < 0 or not math.isfinite(r_mm) or not math.isfinite(r_px):
+            return 0.0, 0.0, 0.0, False
         return float(r_mm), float(r_px), float(math.degrees(two_theta)), True
 
     @staticmethod

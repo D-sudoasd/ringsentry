@@ -12,12 +12,63 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
-from pathlib import Path
 
 import numpy as np
 
 from core.loader import load_image, _lazy_import_matplotlib
 from core.plot_style import apply_matplotlib_style, style_axis
+from gui.windowing import fit_window_to_screen
+
+
+def _thumbnail_dimensions(shape, max_size=64):
+    """Fit ``(height, width)`` into a square box without distorting it."""
+    height, width = int(shape[0]), int(shape[1])
+    max_size = max(1, int(max_size))
+    if height <= 0 or width <= 0:
+        return max_size, max_size
+
+    scale = min(max_size / width, max_size / height)
+    display_width = max(1, int(round(width * scale)))
+    display_height = max(1, int(round(height * scale)))
+    return display_width, display_height
+
+
+def _wheel_scroll_units(event):
+    """Normalize Windows/macOS wheel deltas and Linux wheel buttons."""
+    event_num = str(getattr(event, "num", ""))
+    if event_num == "4":
+        return -1
+    if event_num == "5":
+        return 1
+    try:
+        delta = float(getattr(event, "delta", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+    if delta == 0:
+        return 0
+    magnitude = max(1, int(abs(delta) / 120))
+    return -magnitude if delta > 0 else magnitude
+
+
+def _open_full_preview(app, file_path):
+    """Open a gallery item without changing the app's current file list."""
+    from gui.preview import show_preview
+
+    show_preview(app, target_file=file_path)
+
+
+def _bind_preview_activation(widget, app, file_path):
+    """Make a thumbnail usable by pointer and keyboard without changing input state."""
+    widget.configure(takefocus=True, cursor="hand2")
+
+    def activate(_event=None):
+        _open_full_preview(app, file_path)
+        return "break"
+
+    widget.bind("<Button-1>", activate, add="+")
+    widget.bind("<Return>", activate, add="+")
+    widget.bind("<space>", activate, add="+")
+    return activate
 
 
 def show_gallery(app):
@@ -44,7 +95,11 @@ def show_gallery(app):
 
     win = tk.Toplevel(app)
     win.title("\u6279\u91CF\u7F29\u7565\u56FE\u9884\u89C8 (Batch Thumbnail Gallery)")
-    win.geometry("1200x800")
+    fit_window_to_screen(
+        win,
+        preferred_size=(1200, 800),
+        minimum_size=(760, 520),
+    )
 
     THUMB_SIZE = 64
     COLS = 8
@@ -110,23 +165,44 @@ def show_gallery(app):
         y1 = y0 + outer_canvas.winfo_height()
         if not (x0 <= event.x_root <= x1 and y0 <= event.y_root <= y1):
             return None
-        outer_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        units = _wheel_scroll_units(event)
+        if not units:
+            return None
+        outer_canvas.yview_scroll(units, "units")
         return "break"
 
     win.bind("<MouseWheel>", _on_mousewheel, add="+")
+    win.bind("<Button-4>", _on_mousewheel, add="+")
+    win.bind("<Button-5>", _on_mousewheel, add="+")
 
-    result_queue = queue.Queue()
     # photo_refs keeps a strong reference to PhotoImage objects so they
     # are not garbage-collected before the widget renders them.
     photo_refs = []
+    gallery_state = {
+        "generation": 0,
+        "cancel_event": None,
+        "closed": False,
+    }
 
-    def _open_full_preview(file_path):
-        """Open full preview for a specific file."""
-        saved = app.filelist
-        app.filelist = [(file_path, Path(file_path.name))]
-        from gui.preview import show_preview
-        show_preview(app)
-        app.filelist = saved
+    def _window_exists():
+        if gallery_state["closed"]:
+            return False
+        try:
+            return bool(win.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _close_gallery():
+        gallery_state["closed"] = True
+        cancel_event = gallery_state["cancel_event"]
+        if cancel_event is not None:
+            cancel_event.set()
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+
+    win.protocol("WM_DELETE_WINDOW", _close_gallery)
 
     def _make_thumbnail_widget(idx, file_path, thumb_data, orig_shape):
         row_idx = idx // COLS
@@ -138,6 +214,10 @@ def show_gallery(app):
         if thumb_data is None:
             ttk.Label(frame, text="\u52A0\u8F7D\u5931\u8D25", font=("", 8)).pack()
             return
+
+        display_width, display_height = _thumbnail_dimensions(
+            orig_shape or thumb_data.shape, THUMB_SIZE
+        )
 
         if has_pil:
             # PIL path: normalize -> apply colormap -> resize.
@@ -157,7 +237,7 @@ def show_gallery(app):
 
             pil_img = PILImage.fromarray(uint8_data)
             pil_img = pil_img.resize(
-                (THUMB_SIZE, THUMB_SIZE), PILImage.Resampling.BILINEAR
+                (display_width, display_height), PILImage.Resampling.BILINEAR
             )
             photo = PILImageTk.PhotoImage(pil_img)
             photo_refs.append(photo)
@@ -165,28 +245,23 @@ def show_gallery(app):
             label = ttk.Label(frame, image=photo)
             label.image = photo
             label.pack()
-
-            def on_click(event, fp=file_path):
-                _open_full_preview(fp)
-
-            label.bind("<Button-1>", on_click)
+            _bind_preview_activation(label, app, file_path)
         else:
             # Fallback: small matplotlib figure (slower, but works without PIL)
-            fig_thumb = Figure(figsize=(1.2, 1.2), dpi=50)
+            fig_thumb = Figure(
+                figsize=(display_width / 50, display_height / 50), dpi=50
+            )
             ax = fig_thumb.add_subplot(111)
-            ax.imshow(thumb_data, cmap='viridis', aspect='auto')
+            ax.imshow(thumb_data, cmap='viridis', aspect='equal')
             ax.axis('off')
             style_axis(ax, preset="raw_inspection")
             fig_thumb.tight_layout(pad=0)
 
             canvas_thumb = FigureCanvasTkAgg(fig_thumb, master=frame)
             canvas_thumb.draw()
-            canvas_thumb.get_tk_widget().pack()
-
-            def on_click(event, fp=file_path):
-                _open_full_preview(fp)
-
-            canvas_thumb.mpl_connect('button_press_event', on_click)
+            canvas_widget = canvas_thumb.get_tk_widget()
+            canvas_widget.pack()
+            _bind_preview_activation(canvas_widget, app, file_path)
 
         # Filename label
         name = file_path.name
@@ -203,29 +278,40 @@ def show_gallery(app):
             ).pack()
 
     def load_thumbnails():
+        # Refreshes invalidate every result from the previous worker before
+        # clearing the view, so an old worker can never repopulate this view.
+        previous_cancel = gallery_state["cancel_event"]
+        if previous_cancel is not None:
+            previous_cancel.set()
+        gallery_state["generation"] += 1
+        generation = gallery_state["generation"]
+        worker_cancel = threading.Event()
+        gallery_state["cancel_event"] = worker_cancel
+        # Each refresh owns its queue.  A stale poll must never consume and
+        # discard a result produced by the newer refresh generation.
+        result_queue = queue.Queue()
+
         for widget in inner_frame.winfo_children():
             widget.destroy()
         photo_refs.clear()
 
-        files = app.filelist[:max_thumbs_var.get()]
+        # Snapshot all Tk-backed values before starting the worker.  The
+        # background thread must only use ordinary Python values thereafter.
+        files = list(app.filelist[:max_thumbs_var.get()])
+        h5_path = app.io_tab.h5_path_var.get()
         total = len(files)
-
-        # Thread-safe cancellation flag (set when window is closed)
-        _worker_cancel = threading.Event()
-        win.protocol(
-            "WM_DELETE_WINDOW",
-            lambda: (_worker_cancel.set(), win.destroy()),
-        )
 
         def worker():
             """Background thread: load + downsample one image at a time."""
-            for idx, (file_path, rel_path) in enumerate(files):
-                if _worker_cancel.is_set():
+            for idx, file_entry in enumerate(files):
+                if worker_cancel.is_set():
                     return
+                if isinstance(file_entry, tuple):
+                    file_path = file_entry[0]
+                else:
+                    file_path = file_entry
                 try:
-                    img = load_image(
-                        file_path, app.io_tab.h5_path_var.get()
-                    )
+                    img = load_image(file_path, h5_path)
                     h, w = img.shape
                     # Choose the largest downsample factor that keeps both
                     # dimensions >= THUMB_SIZE after rebinning.
@@ -235,11 +321,11 @@ def show_gallery(app):
                         img.astype(np.float32), scale
                     )
                     result_queue.put(
-                        (idx, file_path, thumb, img.shape, total)
+                        (generation, idx, file_path, thumb, img.shape, total)
                     )
                 except Exception:
                     result_queue.put(
-                        (idx, file_path, None, None, total)
+                        (generation, idx, file_path, None, None, total)
                     )
 
         # Declare the worker thread early so poll_results can reference it
@@ -247,20 +333,39 @@ def show_gallery(app):
 
         def poll_results():
             """Main-thread callback: drain queue, schedule next poll."""
-            if not win.winfo_exists():
+            if not _window_exists():
                 return
+            if gallery_state["generation"] != generation:
+                return
+
+            def drain_results():
+                """Render only results belonging to this refresh generation."""
+                try:
+                    while True:
+                        (
+                            result_generation,
+                            idx,
+                            fpath,
+                            thumb_data,
+                            orig_shape,
+                            total_q,
+                        ) = result_queue.get_nowait()
+                        if result_generation != generation:
+                            continue
+                        progress_var.set(f"{idx + 1}/{total_q}")
+                        _make_thumbnail_widget(
+                            idx, fpath, thumb_data, orig_shape
+                        )
+                except queue.Empty:
+                    pass
+
             # Drain all available results from the queue
-            try:
-                while True:
-                    idx, fpath, thumb_data, orig_shape, total_q = (
-                        result_queue.get_nowait()
-                    )
-                    progress_var.set(f"{idx + 1}/{total_q}")
-                    _make_thumbnail_widget(
-                        idx, fpath, thumb_data, orig_shape
-                    )
-            except queue.Empty:
-                pass
+            drain_results()
+
+            # A refresh may have happened while this callback was running.
+            # The new generation owns all subsequent polling and completion UI.
+            if gallery_state["generation"] != generation:
+                return
 
             if t.is_alive():
                 # Worker still running — poll again in 100 ms
@@ -268,18 +373,9 @@ def show_gallery(app):
             else:
                 # Worker finished — do one final drain in case last
                 # items arrived between the drain and the alive check
-                try:
-                    while True:
-                        idx, fpath, thumb_data, orig_shape, total_q = (
-                            result_queue.get_nowait()
-                        )
-                        progress_var.set(f"{idx + 1}/{total_q}")
-                        _make_thumbnail_widget(
-                            idx, fpath, thumb_data, orig_shape
-                        )
-                except queue.Empty:
-                    pass
-                progress_var.set(f"\u5B8C\u6210: {total} \u4E2A\u6587\u4EF6")
+                drain_results()
+                if gallery_state["generation"] == generation:
+                    progress_var.set(f"\u5B8C\u6210: {total} \u4E2A\u6587\u4EF6")
 
         t.start()
         win.after(100, poll_results)

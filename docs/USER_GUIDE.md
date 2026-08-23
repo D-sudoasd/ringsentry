@@ -83,10 +83,13 @@ Quality control reports numerical facts such as:
 - finite, `NaN`, `Inf`, zero, and negative counts;
 - minimum, maximum, median, percentiles, and dynamic range;
 - dtype-maximum saturation counts; and
-- robust extreme-bright-pixel counts.
+- robust extreme-bright-pixel counts, including an explicit 8-neighbour
+  isolation check used by the hot-pixel suggestion.
 
-QC suggestions never rewrite processing settings. A warning is a request for
-human review, not a crystallographic diagnosis.
+QC analysis never rewrites processing settings. Supported suggestions are
+shown first as a parameter diff with their evidence and source sample; they are
+applied only after explicit confirmation. A warning is a request for human
+review, not a crystallographic diagnosis.
 
 ### 3.3 Configure and preview processing
 
@@ -146,12 +149,20 @@ and log the `NaN`, positive-infinity, and negative-infinity counts separately.
 Third-party TIFF viewers may display non-finite pixels differently even though
 RingSentry's tifffile round-trip preserves them.
 
+All standard outputs are written through a same-directory temporary file and
+published only after a successful write. Cancellation or failure therefore
+does not delete an earlier final output. When different input formats would
+otherwise produce the same output name, the batch planner adds a stable source
+tag (for example `sample__edf.npy` and `sample__tif.npy`) and records the
+disambiguation in the log.
+
 ### 3.5 Preflight, run, and report
 
 Select **开始转换** and review preflight messages before confirming. During a
 batch run, RingSentry records the configured processing/output settings, input
 file list, result counts, and the GUI log in `run_report_*.txt`. Preflight QC
-samples at most five input files. The worker also emits per-file QC and writer
+uses the sample count shown on the Automatic QC tab, capped at 20 files. The
+worker also emits per-file QC and writer
 messages for each file it can load; those messages are copied into the report.
 Implemented processing warnings include specific checks such as binning-edge
 cropping and applied mask counts, but the report is not a general scientific
@@ -279,6 +290,12 @@ model detector tilt, rotation, distortion, module gaps, or a calibrated PONI.
 Built-in named presets are illustrative starting values, not current facility
 calibrations; verify every parameter against the experiment's calibration
 record before scientific use.
+
+The results table distinguishes a physically valid scattering vector from a
+ring that intersects the configured detector. Detector-out-of-range rows stay
+available for inspection and export but are not drawn. Dense detector views
+thin inline labels while retaining the full table and the exact shown/outside
+counts in the status bar.
 
 ## 8. Troubleshooting
 

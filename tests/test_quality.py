@@ -6,11 +6,66 @@ from core.quality import analyze_image_quality, assess_processing_plan
 
 
 class QualityControlTests(unittest.TestCase):
-    def test_quality_statistics_detect_common_risks(self):
+    def test_contiguous_bright_block_is_not_recommended_as_hot_pixels(self):
         arr = np.ones((100, 100), dtype=np.float32)
+        arr[20:40, 20:40] = 1000.0
+
+        report = analyze_image_quality(arr)
+
+        self.assertEqual(report.stats["suspected_extreme_count"], 400)
+        self.assertEqual(report.stats["isolated_extreme_count"], 0)
+        self.assertNotIn(
+            "hot_pixels",
+            {finding.category for finding in report.findings},
+        )
+        self.assertFalse(
+            any("hot pixel suppression" in suggestion.action
+                for suggestion in report.suggestions)
+        )
+
+    def test_contiguous_bright_ring_is_not_recommended_as_hot_pixels(self):
+        arr = np.ones((100, 100), dtype=np.float32)
+        arr[20:80, 20:80] = 1000.0
+        arr[21:79, 21:79] = 1.0
+
+        report = analyze_image_quality(arr)
+
+        self.assertGreater(report.stats["suspected_extreme_count"], 10)
+        self.assertEqual(report.stats["isolated_extreme_count"], 0)
+        self.assertNotIn(
+            "hot_pixels",
+            {finding.category for finding in report.findings},
+        )
+        self.assertFalse(
+            any("hot pixel suppression" in suggestion.action
+                for suggestion in report.suggestions)
+        )
+
+    def test_sufficient_isolated_extremes_are_recommended_for_review(self):
+        arr = np.ones((100, 100), dtype=np.float32)
+        for row in (10, 30, 50, 70):
+            for col in (10, 30, 50):
+                arr[row, col] = 1000.0
+
+        report = analyze_image_quality(arr)
+
+        self.assertEqual(report.stats["isolated_extreme_count"], 12)
+        self.assertIn(
+            "hot_pixels",
+            {finding.category for finding in report.findings},
+        )
+        self.assertTrue(
+            any("hot pixel suppression" in suggestion.action
+                for suggestion in report.suggestions)
+        )
+
+    def test_quality_statistics_detect_common_risks(self):
+        arr = np.zeros((100, 100), dtype=np.float32)
         arr[:60, :] = 0.0
         arr[60:62, :100] = -5.0
-        arr[70:71, :30] = 1000.0
+        for row in (70, 78, 86, 94):
+            for col in (5, 15, 25):
+                arr[row, col] = 1000.0
         arr[0, 0] = np.nan
         arr[0, 1] = np.inf
 
@@ -40,7 +95,9 @@ class QualityControlTests(unittest.TestCase):
 
     def test_suggestions_are_explainable_and_non_mutating(self):
         arr = np.ones((100, 100), dtype=np.int32)
-        arr.flat[:200] = 1000
+        for row in (10, 30, 50, 70):
+            for col in (10, 30, 50):
+                arr[row, col] = 1000
         before = arr.copy()
 
         report = analyze_image_quality(

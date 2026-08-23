@@ -2,8 +2,11 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+from pathlib import Path
 
 import numpy as np
+
+from gui.windowing import fit_window_to_screen
 
 from core.loader import load_image, _lazy_import_matplotlib
 from core.processing import apply_processing
@@ -48,6 +51,27 @@ def _roi_from_drag_points(start, end):
     if w_roi <= 1 or h_roi <= 1:
         return None
     return x, y, w_roi, h_roi
+
+
+def _resolve_preview_target(app, target_file=None):
+    """Return the file to preview, honoring an explicitly selected target."""
+    if target_file is not None:
+        return Path(target_file)
+
+    if not app.filelist:
+        app.count_files(show_dialog=False)
+    if not app.filelist:
+        return None
+
+    first_file = app.filelist[0]
+    if isinstance(first_file, tuple):
+        first_file = first_file[0]
+    return Path(first_file)
+
+
+def _register_line_profile_axes(line_image_axes, ax_raw, ax_processed):
+    """Keep line-selection axes synchronized after a figure redraw."""
+    line_image_axes[:] = [ax_raw, ax_processed]
 
 
 def _preview_processing_arrays(
@@ -114,11 +138,10 @@ def _preview_processing_arrays(
     return coordinate_img, final_img
 
 
-def show_preview(app):
+def show_preview(app, target_file=None):
     """Open a preview window with comparison, single, and line profile modes."""
-    if not app.filelist:
-        app.count_files(show_dialog=False)
-    if not app.filelist:
+    first_file = _resolve_preview_target(app, target_file)
+    if first_file is None:
         messagebox.showinfo(
             "\u65E0\u6587\u4EF6",
             "\u6CA1\u6709\u627E\u5230\u53EF\u9884\u89C8\u7684\u6587\u4EF6\u3002"
@@ -149,11 +172,6 @@ def show_preview(app):
         png_opts = None
 
     try:
-        first_file = (
-            app.filelist[0][0]
-            if isinstance(app.filelist[0], tuple)
-            else app.filelist[0]
-        )
         img = load_image(first_file, app.io_tab.h5_path_var.get())
 
         # Preview and batch execution use the same fail-closed ROI semantics.
@@ -214,7 +232,11 @@ def show_preview(app):
 
         win = tk.Toplevel(app)
         win.title(f"\u9884\u89C8: {first_file.name}")
-        win.geometry("1400x700")
+        fit_window_to_screen(
+            win,
+            preferred_size=(1400, 700),
+            minimum_size=(900, 560),
+        )
 
         # ROI coordinates are part of the processing pipeline and always use
         # array coordinates: x=column, y=row, origin=top-left.  The XY export
@@ -265,7 +287,7 @@ def show_preview(app):
         def clear_roi_callback():
             app.processing_tab.roi_var.set("")
             win.destroy()
-            show_preview(app)
+            show_preview(app, target_file=first_file)
 
         ttk.Button(
             control_frame, text="\u6E05\u7A7A ROI", command=clear_roi_callback
@@ -435,7 +457,7 @@ def show_preview(app):
 
             _imshow_coordinate(ax_proc)
             ax_proc.set_title("\u5750\u6807\u9884\u89C8\uFF08\u5256\u9762\u9009\u62E9\u7528\uFF09")
-            line_image_axes.extend([ax_raw, ax_proc])
+            _register_line_profile_axes(line_image_axes, ax_raw, ax_proc)
 
             ax_profile.set_xlabel("\u50CF\u7D20\u8DDD\u79BB (Pixel Distance)")
             ax_profile.set_ylabel("\u5F3A\u5EA6 (Intensity)")
@@ -494,6 +516,8 @@ def show_preview(app):
             ax_profile.legend(fontsize=8)
             ax_profile.grid(True, ls='--', alpha=0.4)
 
+            _register_line_profile_axes(line_image_axes, ax_raw, ax_proc)
+
             style_figure_axes(fig, preset="raw_inspection")
             fig.tight_layout()
             canvas.draw()
@@ -548,7 +572,7 @@ def show_preview(app):
             app.processing_tab.roi_var.set(roi_str)
             app.log(f"ROI \u5DF2\u9009\u62E9: {roi_str}")
             win.destroy()
-            show_preview(app)
+            show_preview(app, target_file=first_file)
 
         def on_mouse_move(event):
             if view_mode.get() == "line_profile":

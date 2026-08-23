@@ -74,6 +74,26 @@ class DiffractionModelTests(unittest.TestCase):
         )
         self.assertEqual(DiffractionModel.q_to_d_spacing(0.0), 0.0)
 
+    def test_q_to_radius_rejects_plane_detector_geometry(self):
+        """A flat detector only supports 0 <= 2theta < 90 degrees."""
+        wavelength_a = 1.0
+        q_at_90_deg = (4.0 * math.pi / (wavelength_a * 0.1)) * math.sin(
+            math.radians(45.0)
+        )
+
+        _r_mm, _r_px, two_theta, valid = DiffractionModel.q_to_radius(
+            q_at_90_deg, wavelength_a, 1000.0, 0.1
+        )
+        self.assertFalse(valid)
+        self.assertEqual(two_theta, 0.0)
+
+        _r_mm, r_px, two_theta, valid = DiffractionModel.q_to_radius(
+            q_at_90_deg * 1.01, wavelength_a, 1000.0, 0.1
+        )
+        self.assertFalse(valid)
+        self.assertEqual(r_px, 0.0)
+        self.assertEqual(two_theta, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

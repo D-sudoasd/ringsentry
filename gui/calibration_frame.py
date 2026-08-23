@@ -22,6 +22,7 @@ import numpy as np
 from core.loader import load_image, _lazy_import_matplotlib
 from core.plot_style import apply_matplotlib_style, style_figure_axes
 from core.utils import summarize_array_stats
+from gui.windowing import fit_window_to_screen
 
 
 class CalibrationManagerDialog(tk.Toplevel):
@@ -46,7 +47,11 @@ class CalibrationManagerDialog(tk.Toplevel):
         self.title(
             f"\u7BA1\u7406{frame_label} (Manage {frame_label_en} Frames)"
         )
-        self.geometry("800x550")
+        fit_window_to_screen(
+            self,
+            preferred_size=(800, 550),
+            minimum_size=(640, 480),
+        )
         self.transient(parent)
         self.grab_set()
 

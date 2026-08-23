@@ -682,7 +682,13 @@ def path_has_link_or_reparse_component(path: Path, root: Path) -> bool:
     return False
 
 
-def iter_cbf_files(input_dir: Path, output_dir: Path, recursive: bool = True, skip_output_dir: bool = True) -> list[Path]:
+def iter_cbf_files(
+    input_dir: Path,
+    output_dir: Path,
+    recursive: bool = True,
+    skip_output_dir: bool = True,
+    output_suffix: str = "",
+) -> list[Path]:
     logical_input_dir = Path(input_dir).expanduser().absolute()
     if path_has_link_or_reparse_component(
         logical_input_dir, Path(logical_input_dir.anchor)
@@ -738,8 +744,41 @@ def iter_cbf_files(input_dir: Path, output_dir: Path, recursive: bool = True, sk
                 files.append(resolved)
 
     unique = sorted(set(files))
-    if skip_output_dir and output_dir.exists():
+    # Only a strict descendant of the input directory can contain generated
+    # files that should be pruned.  If the roots are equal, suffix-based
+    # output is intentionally allowed beside the source files; if the output
+    # is an ancestor, pruning it would incorrectly remove every input.
+    skip_output_tree = (
+        skip_output_dir
+        and output_dir != input_dir
+        and is_relative_to(output_dir, input_dir)
+    )
+    if skip_output_tree:
         unique = [p for p in unique if not is_relative_to(p, output_dir)]
+    if skip_output_dir and output_dir == input_dir and output_suffix.strip():
+        # With an output root equal to the input root, there is no directory
+        # boundary to use for pruning.  Suppress only a suffixed file whose
+        # unsuffixed counterpart is itself a safely discovered input.  A
+        # standalone file such as ``original_fixed.cbf`` remains a valid
+        # source instead of being blanket-excluded by its name.
+        suffix = output_suffix.strip()
+        suffix_folded = suffix.casefold()
+        discovered = set(unique)
+        generated_outputs = []
+        for candidate in unique:
+            stem = candidate.stem
+            if not stem.casefold().endswith(suffix_folded):
+                generated_outputs.append(candidate)
+                continue
+            source_stem = stem[: -len(suffix)]
+            if not source_stem:
+                generated_outputs.append(candidate)
+                continue
+            source = candidate.with_name(source_stem + candidate.suffix)
+            if source in discovered:
+                continue
+            generated_outputs.append(candidate)
+        unique = generated_outputs
     # Avoid processing backup and temporary files created by this tool.
     unique = [p for p in unique if ".tmp_zero2sat_" not in p.name and not p.name.endswith(".bak_zero2sat_original")]
     return unique
@@ -879,11 +918,8 @@ def validate_output_path(src: Path, output_path: Path, cfg: ProcessConfig) -> No
         )
 
 
-def output_path_for(src: Path, cfg: ProcessConfig) -> Path:
-    if cfg.overwrite_original:
-        raise ValueError(
-            "Original CBF overwrite is disabled. Choose a separate output directory."
-        )
+def _planned_output_path(src: Path, cfg: ProcessConfig) -> Path:
+    """Build an output path without creating directories or touching files."""
     if cfg.preserve_subfolders:
         rel = src.resolve().relative_to(cfg.input_dir.resolve())
         out = cfg.output_dir / rel
@@ -892,6 +928,47 @@ def output_path_for(src: Path, cfg: ProcessConfig) -> Path:
     suffix = cfg.suffix.strip()
     if suffix:
         out = out.with_name(out.stem + suffix + out.suffix)
+    return out
+
+
+def _reject_output_mapping_collisions(files: Iterable[Path], cfg: ProcessConfig) -> None:
+    """Reject ambiguous flat output mappings before any output is written."""
+    if cfg.preserve_subfolders:
+        return
+
+    sources_by_target: dict[str, tuple[Path, list[Path]]] = {}
+    for source in files:
+        source = Path(source).expanduser().resolve()
+        target = _planned_output_path(source, cfg)
+        target_key = str(target.absolute()).casefold()
+        if target_key not in sources_by_target:
+            sources_by_target[target_key] = (target, [])
+        sources_by_target[target_key][1].append(source)
+
+    conflicts = [
+        (target, sorted(set(sources)))
+        for target, sources in sources_by_target.values()
+        if len(set(sources)) > 1
+    ]
+    if not conflicts:
+        return
+
+    details = [
+        f"{target}: " + ", ".join(str(source) for source in sources)
+        for target, sources in conflicts
+    ]
+    raise ValueError(
+        "Output mapping collisions detected when preserve_subfolders=False; "
+        "each conflict must be resolved before writing:\n" + "\n".join(details)
+    )
+
+
+def output_path_for(src: Path, cfg: ProcessConfig) -> Path:
+    if cfg.overwrite_original:
+        raise ValueError(
+            "Original CBF overwrite is disabled. Choose a separate output directory."
+        )
+    out = _planned_output_path(src, cfg)
     validate_output_path(src, out, cfg)
     out.parent.mkdir(parents=True, exist_ok=True)
     validate_output_path(src, out, cfg)
@@ -1275,8 +1352,15 @@ def run_batch(
     cancel_event=None,
 ) -> tuple[list[FileResult], BatchSummary]:
     cfg = cfg.normalized()
+    files = iter_cbf_files(
+        cfg.input_dir,
+        cfg.output_dir,
+        cfg.recursive,
+        cfg.skip_output_dir,
+        cfg.suffix,
+    )
+    _reject_output_mapping_collisions(files, cfg)
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
-    files = iter_cbf_files(cfg.input_dir, cfg.output_dir, cfg.recursive, cfg.skip_output_dir)
     total = len(files)
 
     func = scan_file if action == "scan" else process_file
@@ -2869,8 +2953,11 @@ def run_repair_from_scan_results(
     progress_callback: Optional[Callable[[int, int, FileResult], None]] = None,
 ) -> tuple[list[FileResult], BatchSummary]:
     cfg = cfg.normalized()
-    cfg.output_dir.mkdir(parents=True, exist_ok=True)
     scan_results = list(scan_results)
+    _reject_output_mapping_collisions(
+        (Path(scan_result.input_file) for scan_result in scan_results), cfg
+    )
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
     total = len(scan_results)
     results: list[FileResult] = []
 

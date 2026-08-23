@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from gui.styles import apply_theme, configure_styles
+from gui.windowing import fit_window_to_screen
 from gui.tabs.io_tab import IOTab
 from gui.tabs.processing_tab import ProcessingTab
 from gui.tabs.output_tab import OutputTab
@@ -23,7 +24,7 @@ from gui.tabs.q_calculator_tab import QCalculatorTab
 from gui.log_panel import LogPanel
 from gui.preview import show_preview
 from core.constants import APP_TITLE, APP_VERSION, CONFIG_FILE, DEFAULT_H5_PATH
-from core.utils import get_output_base_name, parse_roi_text, parse_optional_float
+from core.utils import parse_roi_text, parse_optional_float
 from core.loader import (
     load_image,
     load_image_with_info,
@@ -37,7 +38,15 @@ from core.quality import (
     quality_summary_line,
 )
 from core.worker import process_one_file
+from core.output_safety import plan_output_paths
 from core.png_export import validate_png_options
+from gui.run_outcomes import (
+    BATCH_OUTCOME_LABELS as _BATCH_OUTCOME_LABELS,
+    classify_batch_outcome,
+    classify_batch_result,
+    is_manual_review_log,
+    normalize_preflight_sample_count,
+)
 
 
 class App(tk.Tk):
@@ -46,8 +55,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_TITLE} {APP_VERSION}")
-        self.geometry("1280x900")
-        self.minsize(1100, 800)
+        fit_window_to_screen(
+            self,
+            preferred_size=(1280, 900),
+            minimum_size=(1100, 800),
+        )
 
         apply_theme(self)
         configure_styles(self)
@@ -63,6 +75,9 @@ class App(tk.Tk):
         self.flat_frame_provenance = None
         self.cancellation_event = threading.Event()
         self.thread_pool = None
+        self._conversion_thread = None
+        self._close_poll_after_id = None
+        self._close_requested = False
         self.is_running = False
         self._pending_ui_after_ids = set()
         self._ui_callback_lock = threading.Lock()
@@ -77,6 +92,7 @@ class App(tk.Tk):
         self.start_time = None
         self.last_max_workers = None
         self.last_quality_reports = []
+        self._run_log_start_index = 0
 
         self._create_widgets()
         self._load_config()
@@ -339,7 +355,14 @@ class App(tk.Tk):
 
     # --- Preflight Checks ---
     def _run_preflight_checks(
-        self, outroot, formats, roi, bin_factor, min_intensity, max_intensity
+        self,
+        outroot,
+        formats,
+        roi,
+        bin_factor,
+        min_intensity,
+        max_intensity,
+        output_plan=None,
     ):
         errors = []
         warnings = []
@@ -365,13 +388,12 @@ class App(tk.Tk):
 
         if not self.output_tab.overwrite_var.get():
             existing_outputs = 0
-            for fp, rel_path in self.filelist:
-                base_name = get_output_base_name(fp)
-                for fmt in formats:
-                    ext = {"xycsv": "csv", "xydat": "dat"}.get(fmt, fmt)
-                    out_path = Path(outroot) / rel_path.parent / fmt / f"{base_name}.{ext}"
-                    if out_path.exists():
-                        existing_outputs += 1
+            plan = output_plan or plan_output_paths(
+                self.filelist, outroot, formats
+            )
+            for _key, out_path in plan.items():
+                if out_path.exists():
+                    existing_outputs += 1
                 if existing_outputs > 20:
                     break
             if existing_outputs:
@@ -383,7 +405,14 @@ class App(tk.Tk):
 
         sample_infos = []
         shape_to_files = {}
-        sample_entries = self.filelist[:min(5, len(self.filelist))]
+        sample_var = getattr(
+            getattr(self, "quality_tab", None), "sample_count_var", None
+        )
+        requested_samples = sample_var.get() if sample_var is not None else len(self.filelist)
+        sample_count = normalize_preflight_sample_count(
+            requested_samples, len(self.filelist)
+        )
+        sample_entries = self.filelist[:sample_count]
         for sample_file, _ in sample_entries:
             try:
                 loaded = load_image_with_info(
@@ -435,7 +464,7 @@ class App(tk.Tk):
                     h5_files.append(fp)
             except Exception:
                 continue
-        for h5_file in h5_files[:5]:
+        for h5_file in h5_files[:sample_count]:
             try:
                 _ = load_image_with_info(h5_file, self.io_tab.h5_path_var.get())
             except Exception as e:
@@ -608,6 +637,9 @@ class App(tk.Tk):
                 else ""
             )
 
+        # Keep the persistent on-screen history, but scope reports and manual
+        # review to this run (including file discovery and preflight logs).
+        self._run_log_start_index = len(self.log_panel.run_log_lines)
         self.count_files(show_dialog=False)
         if not self.filelist:
             return messagebox.showwarning(
@@ -720,10 +752,11 @@ class App(tk.Tk):
             "lossless_matrix": self.output_tab.lossless_matrix_var.get(),
         }
 
+        output_plan = plan_output_paths(self.filelist, outroot, formats)
         if not self._run_preflight_checks(
             outroot=outroot, formats=formats, roi=roi,
             bin_factor=bin_factor, min_intensity=min_i,
-            max_intensity=max_i,
+            max_intensity=max_i, output_plan=output_plan,
         ):
             return
 
@@ -732,6 +765,7 @@ class App(tk.Tk):
                 fp, rp, root, outroot, formats,
                 xy_opts, png_opts, self.io_tab.h5_path_var.get(), proc_opts,
                 self.cancellation_event, self.output_tab.overwrite_var.get(),
+                output_plan,
             )
             for fp, rp in self.filelist
         ]
@@ -742,7 +776,6 @@ class App(tk.Tk):
         self.log_panel.prog['maximum'] = len(self.filelist)
         self.log_panel.prog['value'] = 0
         self.start_time = datetime.now()
-        self.log_panel.run_log_lines = []
         self.log(
             f"--- \u5F00\u59CB\u8F6C\u6362 {len(self.filelist)} \u4E2A\u6587\u4EF6 | "
             f"\u7EBF\u7A0B={max_workers} | "
@@ -757,31 +790,26 @@ class App(tk.Tk):
 
         def on_done_threadsafe(logs):
             # Bug Fix: Count per-file, not per-format
-            has_success = False
-            has_failed = False
-            has_skipped = False
-            has_cancelled = False
-
             for msg in logs:
                 self.log(msg)
-                if "SUCCESS:" in msg:
-                    has_success = True
-                elif "FAILED:" in msg or "ERROR" in msg:
-                    has_failed = True
-                elif "SKIPPED:" in msg:
-                    has_skipped = True
-                elif "CANCELLED" in msg or "Cancelled" in msg:
-                    has_cancelled = True
+
+            result = classify_batch_result(logs)
 
             with self.count_lock:
-                if has_cancelled:
+                if result == "cancelled":
                     self.stats["cancelled"] += 1
-                elif has_failed:
+                elif result == "failed":
                     self.stats["failed"] += 1
-                elif has_skipped and not has_success:
+                elif result == "skipped":
                     self.stats["skipped"] += 1
-                elif has_success:
+                elif result == "success":
                     self.stats["success"] += 1
+                elif result == "unknown":
+                    # A worker should always emit one terminal marker.  Keep
+                    # an unexpected result visible without treating a bare QC
+                    # ``ERROR:`` line as a conversion failure.
+                    self.log("WARNING: 未识别的文件处理结果，已计入跳过: " + "; ".join(logs))
+                    self.stats["skipped"] += 1
 
                 self.done_count += 1
                 done_count = self.done_count
@@ -800,6 +828,7 @@ class App(tk.Tk):
             )
 
         def main_thread_func():
+            callback_failed = False
             try:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=max_workers
@@ -816,6 +845,7 @@ class App(tk.Tk):
                                     ["CANCELLED: future cancelled"]
                                 ),
                             ):
+                                callback_failed = True
                                 return
                             continue
                         try:
@@ -825,18 +855,30 @@ class App(tk.Tk):
                         if not self._schedule_ui_callback(
                             lambda logs=logs: on_done_threadsafe(logs)
                         ):
+                            callback_failed = True
                             return
+                if not self._schedule_ui_callback(lambda: self._finalize_run(outroot)):
+                    callback_failed = True
             except Exception as e:
-                self.thread_pool = None
+                callback_failed = True
                 self._schedule_ui_callback(
                     lambda e=e: self._handle_worker_thread_error(e)
                 )
-                return
+            finally:
+                # The executor context has fully shut down before these
+                # references are cleared.  This keeps close polling accurate
+                # even when the Tk loop rejects a worker callback.
+                self.thread_pool = None
+                self._conversion_thread = None
+                if callback_failed:
+                    self.is_running = False
 
-            self.thread_pool = None
-            self._schedule_ui_callback(lambda: self._finalize_run(outroot))
-
-        threading.Thread(target=main_thread_func, daemon=True).start()
+        self._conversion_thread = threading.Thread(
+            target=main_thread_func,
+            daemon=True,
+            name="ringsentry-batch-coordinator",
+        )
+        self._conversion_thread.start()
 
     def _handle_worker_thread_error(self, exc):
         self.log(f"批处理线程异常: {exc}")
@@ -854,10 +896,13 @@ class App(tk.Tk):
             if self.start_time
             else 0.0
         )
-        if self.cancellation_event.is_set():
-            self.log("--- \u8F6C\u6362\u5DF2\u88AB\u7528\u6237\u53D6\u6D88 ---")
-        else:
-            self.log("--- \u8F6C\u6362\u5B8C\u6210 ---")
+        outcome = classify_batch_outcome(
+            self.stats,
+            len(self.filelist),
+            cancellation_requested=self.cancellation_event.is_set(),
+        )
+        outcome_label = _BATCH_OUTCOME_LABELS[outcome]
+        self.log(f"--- 批处理结果: {outcome_label} ---")
 
         self._set_ui_state(running=False)
         self.is_running = False
@@ -875,7 +920,7 @@ class App(tk.Tk):
             self.log(f"\u65E0\u6CD5\u4FDD\u5B58\u8FD0\u884C\u62A5\u544A: {e}")
 
         summary = (
-            f"\u5B8C\u6210\u3002\n"
+            f"结果: {outcome_label}\n"
             f"\u6587\u4EF6\u6570: {len(self.filelist)}\n"
             f"\u6210\u529F: {self.stats['success']}\n"
             f"\u5931\u8D25: {self.stats['failed']}\n"
@@ -887,7 +932,8 @@ class App(tk.Tk):
             summary += f"\n\n\u62A5\u544A:\n{report_path}"
 
         if messagebox.askyesno(
-            "\u6279\u91CF\u5904\u7406\u5B8C\u6210", summary + "\n\n\u6253\u5F00\u8F93\u51FA\u76EE\u5F55?"
+            f"批量处理结果：{outcome_label}",
+            summary + "\n\n\u6253\u5F00\u8F93\u51FA\u76EE\u5F55?",
         ):
             try:
                 if sys.platform.startswith("win"):
@@ -904,7 +950,9 @@ class App(tk.Tk):
     def _write_run_report(self, outroot):
         run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_path = Path(outroot) / f"run_report_{run_stamp}.txt"
-        run_logs = self.log_panel.run_log_lines
+        run_logs = self.log_panel.run_log_lines[
+            getattr(self, "_run_log_start_index", 0):
+        ]
         elapsed = ""
         if self.start_time:
             elapsed_sec = int((datetime.now() - self.start_time).total_seconds())
@@ -916,12 +964,20 @@ class App(tk.Tk):
         manual_review_logs = [
             line
             for line in run_logs
-            if "REVIEW:" in line or "WARNING:" in line or "FAILED:" in line
+            if is_manual_review_log(line)
         ]
         qc_reports = list(self.last_quality_reports)
         qc_review_reports = [
             report for report in qc_reports if report.review_required
         ]
+        cancellation_event = getattr(self, "cancellation_event", None)
+        outcome = classify_batch_outcome(
+            self.stats,
+            len(self.filelist),
+            cancellation_requested=bool(
+                cancellation_event is not None and cancellation_event.is_set()
+            ),
+        )
 
         lines = [
             f"{APP_TITLE} {APP_VERSION}",
@@ -957,6 +1013,7 @@ class App(tk.Tk):
                 if "png" in formats else "PNG Display: <not selected>"
             ),
             f"Elapsed: {elapsed}",
+            f"Outcome: {_BATCH_OUTCOME_LABELS[outcome]}",
             f"Success: {self.stats['success']}",
             f"Failed: {self.stats['failed']}",
             f"Skipped: {self.stats['skipped']}",
@@ -1047,9 +1104,45 @@ class App(tk.Tk):
         report_path.write_text("\n".join(lines), encoding="utf-8")
         return report_path
 
+    def _batch_is_active(self):
+        """Return whether any batch coordinator or worker resources remain."""
+        coordinator = getattr(self, "_conversion_thread", None)
+        coordinator_alive = bool(
+            coordinator is not None
+            and getattr(coordinator, "is_alive", lambda: False)()
+        )
+        return bool(self.is_running or self.thread_pool is not None or coordinator_alive)
+
+    def _wait_for_batch_close(self):
+        """Poll until batch workers finish, then save settings and destroy Tk."""
+        if self._batch_is_active():
+            if self._close_poll_after_id is None:
+                try:
+                    after_id = self.after(50, self._poll_batch_close)
+                except (RuntimeError, tk.TclError):
+                    return
+                self._close_poll_after_id = after_id
+                with self._ui_callback_lock:
+                    self._pending_ui_after_ids.add(after_id)
+            return
+        self._finish_close()
+
+    def _poll_batch_close(self):
+        after_id = self._close_poll_after_id
+        self._close_poll_after_id = None
+        if after_id is not None:
+            with self._ui_callback_lock:
+                self._pending_ui_after_ids.discard(after_id)
+        self._wait_for_batch_close()
+
+    def _finish_close(self):
+        self._close_requested = False
+        self._save_config()
+        self.destroy()
+
     def cancel_conversion(self):
         """Cancel the ongoing conversion."""
-        if not self.is_running and not self.thread_pool:
+        if not self._batch_is_active():
             return
         self.log("!!! \u8BF7\u6C42\u53D6\u6D88\uFF0C\u6B63\u5728\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210... !!!")
         self.cancellation_event.set()
@@ -1334,19 +1427,20 @@ class App(tk.Tk):
             ):
                 self.overexposure_tab.stop()
             return
-        if self.thread_pool:
+        if self._batch_is_active():
+            if self._close_requested:
+                return
             if messagebox.askyesno(
                 "\u9000\u51FA",
                 "\u6B63\u5728\u8F6C\u6362\u4E2D\uFF0C\u786E\u5B9A\u8981\u9000\u51FA\u5417?",
             ):
+                self._close_requested = True
                 self.cancel_conversion()
-                self._save_config()
-                self.destroy()
+                self._wait_for_batch_close()
                 return
             else:
                 return
-        self._save_config()
-        self.destroy()
+        self._finish_close()
 
     def destroy(self):
         overexposure_worker = getattr(

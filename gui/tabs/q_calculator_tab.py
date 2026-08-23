@@ -24,16 +24,28 @@ _THETA = "2th"       # 2theta display fallback
 _DEG = "deg"         # degree symbol fallback
 
 
+def _ring_label_indices(count: int, max_labels: int = 6) -> list[int]:
+    """Choose evenly spaced ring labels without turning dense plots into text."""
+    count = max(0, int(count))
+    max_labels = max(0, int(max_labels))
+    if count == 0 or max_labels == 0:
+        return []
+    if count <= max_labels:
+        return list(range(count))
+    if max_labels == 1:
+        return [0]
+    last = count - 1
+    return sorted({round(i * last / (max_labels - 1)) for i in range(max_labels)})
+
+
 # ---------------------------------------------------------------------------
 # Embedded matplotlib plot panel
 # ---------------------------------------------------------------------------
 
 class _DetectorPlotPanel(ttk.Frame):
     """Matplotlib detector-view panel embedded inside the tab."""
-
     def __init__(self, parent: tk.Widget):
         super().__init__(parent)
-
         import matplotlib
         try:
             if matplotlib.get_backend().lower() != "tkagg":
@@ -44,79 +56,112 @@ class _DetectorPlotPanel(ttk.Frame):
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         from matplotlib.figure import Figure
         from matplotlib.patches import Rectangle, Circle
-
         self._Figure = Figure
         self._Rectangle = Rectangle
         self._Circle = Circle
         self._matplotlib = matplotlib
-
         self.figure = Figure(figsize=(5.6, 4.4), dpi=100)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_aspect("equal")
-
         top = ttk.Frame(self)
         top.pack(fill=tk.X)
-
         self.canvas = FigureCanvasTkAgg(self.figure, master=self)
         self.toolbar = NavigationToolbar2Tk(self.canvas, top)
         self.toolbar.update()
-
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
     def draw_scene(
         self,
         det_cfg: dict,
         q_results: list,
         selected_q: float | None = None,
         info_text: str | None = None,
+        q_unit: str = "nm^-1",
     ) -> None:
         self.ax.clear()
-
         W = float(det_cfg["width"])
         H = float(det_cfg["height"])
         CX = float(det_cfg["center_x"])
         CY = float(det_cfg["center_y"])
-
         self.ax.set_xlim(0, W)
         self.ax.set_ylim(H, 0)
-
         rect = self._Rectangle(
             (0, 0), W, H, linewidth=1.5, edgecolor="#666666",
             facecolor="none", linestyle="--",
         )
         self.ax.add_patch(rect)
         self.ax.plot(CX, CY, "r+", markersize=12, markeredgewidth=2, label="Beam Center")
-
-        valid_rings = [r for r in q_results if r.get("valid", False)]
+        valid_rings = [r for r in q_results if r.get(
+            "visible", r.get("valid", False) and r.get("in_detector", True)
+        )]
         if valid_rings:
             colors = self._matplotlib.cm.viridis(np.linspace(0, 1, len(valid_rings)))
+            label_indices = _ring_label_indices(len(valid_rings))
+            label_ranks = {index: rank for rank, index in enumerate(label_indices)}
+            base_linewidth = 0.8 if len(valid_rings) > 40 else 1.2
+            base_alpha = 0.72 if len(valid_rings) > 40 else 0.9
             for i, res in enumerate(valid_rings):
                 r = float(res["r_px"])
                 q_val = float(res["q"])
-
-                lw = 1.6
-                if selected_q is not None and abs(q_val - selected_q) <= 1e-9:
+                q_display = float(res.get(
+                    "q_display", q_val * (0.1 if q_unit == "A^-1" else 1.0)
+                ))
+                is_selected = (
+                    selected_q is not None
+                    and abs(q_val - selected_q) <= 1e-9
+                )
+                lw = base_linewidth
+                if is_selected:
                     lw = 3.0
-
                 circle = self._Circle(
                     (CX, CY), r, fill=False, color=colors[i],
-                    linewidth=lw, alpha=0.9,
+                    linewidth=lw, alpha=base_alpha,
                 )
                 self.ax.add_patch(circle)
-
-                lx = CX + r
-                if 0.0 < lx < W and 0.0 < CY < H:
-                    self.ax.text(
-                        lx, CY, f"{q_val:.3g}", fontsize=8,
-                        color=colors[i], fontweight="bold",
+                should_label = i in label_ranks or is_selected
+                label_pos = None
+                if should_label:
+                    rank = label_ranks.get(i, 0)
+                    label_count = max(1, len(label_indices))
+                    phase = -math.pi / 2 + (2 * math.pi * rank / label_count)
+                    offsets = (0, math.pi / 4, -math.pi / 4, math.pi / 2,
+                               -math.pi / 2, 3 * math.pi / 4, -3 * math.pi / 4,
+                               math.pi)
+                    # Margins are expressed in detector coordinates, so use a
+                    # fraction of the view rather than a fixed pixel-like
+                    # value. This keeps text boxes fully inside exported plots.
+                    margin_x = W * 0.14
+                    margin_y = H * 0.08
+                    points = (
+                        (CX + r * math.cos(phase + offset),
+                         CY + r * math.sin(phase + offset))
+                        for offset in offsets
                     )
-
+                    label_pos = next(
+                        ((lx, ly) for lx, ly in points
+                         if margin_x <= lx <= W - margin_x
+                         and margin_y <= ly <= H - margin_y),
+                        None,
+                    )
+                if label_pos is not None:
+                    ha = "left" if label_pos[0] >= CX else "right"
+                    va = "bottom" if label_pos[1] <= CY else "top"
+                    self.ax.text(
+                        label_pos[0], label_pos[1],
+                        f"{q_display:.3g} {q_unit}", fontsize=7,
+                        color=colors[i], fontweight="bold",
+                        ha=ha, va=va,
+                        bbox=dict(
+                            boxstyle="round,pad=0.15",
+                            facecolor="white",
+                            alpha=0.68,
+                            edgecolor="none",
+                        ),
+                    )
         self.ax.set_title("Detector View (constant-Q rings)", fontsize=10)
         self.ax.set_xlabel("Pixel X")
         self.ax.set_ylabel("Pixel Y")
         self.ax.legend(loc="upper right", fontsize="small")
         style_axis(self.ax, preset="raw_inspection")
-
         if info_text:
             self.ax.text(
                 0.02, 0.98, info_text,
@@ -128,16 +173,12 @@ class _DetectorPlotPanel(ttk.Frame):
                     alpha=0.8, edgecolor="#cccccc",
                 ),
             )
-
         self.figure.tight_layout()
         self.canvas.draw()
-
     def connect(self, event_name: str, callback):
         return self.canvas.mpl_connect(event_name, callback)
-
     def export_figure(self, path: str, preset: str = "Publication") -> None:
         save_figure(self.figure, path, preset=preset)
-
 
 # ---------------------------------------------------------------------------
 # Q-Calculator Tab
@@ -145,42 +186,33 @@ class _DetectorPlotPanel(ttk.Frame):
 
 class QCalculatorTab(ttk.Frame):
     """Q <-> Pixel radius calculator and detector-view visualizer."""
-
     Q_UNITS = ("nm^-1", "A^-1")  # ASCII-safe: avoid Unicode rendering issues
-
     def __init__(self, parent, app):
         super().__init__(parent, padding=4)
         self.app = app
-
         self.vars: dict[str, tk.StringVar] = {}
         self.entries: dict[str, ttk.Entry] = {}
         self.plot_export_preset_var = tk.StringVar(value="Publication")
         self.result_data: list[dict] = []
         self._plot_rings: list[dict] = []
+        self._tree_row_lookup: dict[str, dict] = {}
         self._selected_q_nm: float | None = None
         self._syncing_energy_wl: bool = False
-
         self._create_widgets()
-
         # Load default preset
         self.load_preset("BL19B2 (SAXS)")
         self._sync_energy_from_wavelength()
         self.run_calculation()
-
     # ------------------------------------------------------------------ UI
-
     def _create_widgets(self):
         paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
-
         # --- Left panel (scrollable, wider) ---
         left_outer = ttk.Frame(paned)
         paned.add(left_outer, weight=0)
-
         left_canvas = tk.Canvas(left_outer, width=420, highlightthickness=0)
         left_scroll = ttk.Scrollbar(left_outer, orient="vertical", command=left_canvas.yview)
         self._left_frame = ttk.Frame(left_canvas)
-
         self._left_frame.bind(
             "<Configure>",
             lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all")),
@@ -195,10 +227,8 @@ class QCalculatorTab(ttk.Frame):
             ),
         )
         left_canvas.configure(yscrollcommand=left_scroll.set)
-
         left_canvas.pack(side="left", fill="both", expand=True)
         left_scroll.pack(side="right", fill="y")
-
         # Mouse wheel scrolling
         def _on_mousewheel(event):
             x0 = left_canvas.winfo_rootx()
@@ -209,25 +239,18 @@ class QCalculatorTab(ttk.Frame):
                 return None
             left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
             return "break"
-
         self.winfo_toplevel().bind("<MouseWheel>", _on_mousewheel, add="+")
-
         left = self._left_frame
-
         # --- Right panel (plot) ---
         right = ttk.Frame(paned)
         paned.add(right, weight=1)
-
         self._build_left_panel(left)
         self._build_right_panel(right)
-
     # ---- Left panel widgets ----
-
     def _build_left_panel(self, left: ttk.Frame):
         # -- Preset --
         lf_preset = ttk.LabelFrame(left, text="  Beamline Preset / \u7ebf\u7ad9\u9884\u8bbe  ", padding=8)
         lf_preset.pack(fill="x", padx=4, pady=(0, 6))
-
         self.vars["preset"] = tk.StringVar(value=list(BEAMLINE_PRESETS.keys())[0])
 
         preset_row = ttk.Frame(lf_preset)
@@ -374,6 +397,8 @@ class QCalculatorTab(ttk.Frame):
         ttk.Label(tab_list, text="\u6bcf\u884c\u6216\u7528\u9017\u53f7/\u7a7a\u683c\u5206\u9694\u8f93\u5165 Q:").pack(anchor="w")
         self.q_text = tk.Text(tab_list, height=5, wrap="none", font=("Consolas", 9))
         self.q_text.pack(fill="x", pady=(4, 0))
+        self.q_text.bind("<Control-Return>", self._on_calculate_shortcut)
+        self.q_text.bind("<Command-Return>", self._on_calculate_shortcut)
         ttk.Label(
             tab_list,
             text="(\u82e5\u975e\u7a7a\uff0c\u5217\u8868\u4f1a\u8986\u76d6 Range \u8bbe\u7f6e)",
@@ -412,17 +437,27 @@ class QCalculatorTab(ttk.Frame):
         lf_res = ttk.LabelFrame(left, text="  Results / \u7ed3\u679c  ", padding=6)
         lf_res.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
 
-        cols = ("Q", "2th(deg)", "d(A)", "r(mm)", "r(px)")
-        self.tree = ttk.Treeview(lf_res, columns=cols, show="headings", height=8)
-        col_widths = {"Q": 72, "2th(deg)": 70, "d(A)": 72, "r(mm)": 68, "r(px)": 68}
+        cols = ("Q", "2th(deg)", "d(A)", "r(mm)", "r(px)", "Physics", "Detector")
+        tree_frame = ttk.Frame(lf_res)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
+        col_widths = {"Q": 72, "2th(deg)": 70, "d(A)": 72, "r(mm)": 68, "r(px)": 68, "Physics": 74, "Detector": 88}
         for c in cols:
             self.tree.heading(c, text=c)
-            self.tree.column(c, width=col_widths.get(c, 68), anchor="center", minwidth=50)
+            self.tree.column(
+                c, width=col_widths.get(c, 68), anchor="center", minwidth=50, stretch=False,
+            )
 
-        sb = ttk.Scrollbar(lf_res, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set)
-        self.tree.pack(side="left", fill=tk.BOTH, expand=True)
-        sb.pack(side="right", fill="y")
+        ysb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        xsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        ysb.grid(row=0, column=1, sticky="ns")
+        xsb.grid(row=1, column=0, sticky="ew")
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+        self.tree.tag_configure("out-of-detector", foreground="#9a6700")
+        self.tree.tag_configure("invalid", foreground="#777777")
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
         ttk.Button(left, text="\u590d\u5236\u8868\u683c (Copy TSV)", command=self._copy_table).pack(fill="x", padx=4)
@@ -464,7 +499,16 @@ class QCalculatorTab(ttk.Frame):
             validate="key", validatecommand=vcmd,
         )
         self.entries[key] = entry
+        entry.bind("<Return>", self._on_enter)
         return entry
+
+    def _on_enter(self, _event=None):
+        self.run_calculation()
+        return "break"
+
+    def _on_calculate_shortcut(self, _event=None):
+        self.run_calculation()
+        return "break"
 
     @staticmethod
     def _is_float_text(s: str) -> bool:
@@ -518,6 +562,21 @@ class QCalculatorTab(ttk.Frame):
 
     def _q_unit_factor_from_nm(self) -> float:
         return 0.1 if self.vars["q_unit"].get() == "A^-1" else 1.0
+
+    @staticmethod
+    def _ring_in_detector(r_px: float, det_w: float, det_h: float,
+                          center_x: float, center_y: float) -> bool:
+        values = (r_px, det_w, det_h, center_x, center_y)
+        if not all(math.isfinite(float(value)) for value in values):
+            return False
+        if r_px < 0 or det_w <= 0 or det_h <= 0:
+            return False
+        nx, ny = min(max(center_x, 0.0), det_w), min(max(center_y, 0.0), det_h)
+        min_radius = math.hypot(nx - center_x, ny - center_y)
+        max_radius = max(math.hypot(x - center_x, y - center_y) for x, y in (
+            (0.0, 0.0), (det_w, 0.0), (0.0, det_h), (det_w, det_h)))
+        tol = max(1e-9, 1e-9 * max(1.0, r_px, max_radius))
+        return min_radius - tol <= r_px <= max_radius + tol
 
     # ------------------------------------------------------------------ sync
 
@@ -661,7 +720,10 @@ class QCalculatorTab(ttk.Frame):
         self.tree.delete(*self.tree.get_children())
         self.result_data = []
         self._plot_rings = []
+        self._tree_row_lookup = {}
         self._selected_q_nm = None
+        q_unit = self.vars["q_unit"].get()
+        getattr(self.tree, "heading", lambda *_args, **_kwargs: None)("Q", text=f"Q ({q_unit})")
 
         for q_nm in q_vals_nm:
             r_mm, r_px, two_th, valid = DiffractionModel.q_to_radius(
@@ -669,6 +731,11 @@ class QCalculatorTab(ttk.Frame):
                 float(p["pixel_size_mm"]),
             )
             d_A = DiffractionModel.q_to_d_spacing(q_nm, unit="A")
+            physical_valid = bool(valid)
+            in_detector = physical_valid and self._ring_in_detector(
+                r_px, float(p["det_w"]), float(p["det_h"]),
+                float(p["center_x"]), float(p["center_y"]))
+            visible = physical_valid and in_detector
 
             row = dict(
                 q=q_nm,
@@ -677,19 +744,29 @@ class QCalculatorTab(ttk.Frame):
                 d_A=d_A,
                 r_mm=r_mm,
                 r_px=r_px,
-                valid=bool(valid),
+                valid=physical_valid,
+                physical_valid=physical_valid,
+                in_detector=in_detector,
+                detector_in_range=in_detector,
+                visible=visible,
             )
             self.result_data.append(row)
 
-            if valid:
-                self.tree.insert("", "end", values=(
-                    f"{row['q_display']:.4g}",
-                    f"{two_th:.4f}",
-                    f"{d_A:.4g}",
-                    f"{r_mm:.2f}",
-                    f"{r_px:.2f}",
+            physics_status = "valid" if physical_valid else "invalid"
+            detector_status = "in range" if in_detector else (
+                "out of range" if physical_valid else "n/a")
+            tags = () if visible else (
+                ("out-of-detector",) if physical_valid else ("invalid",))
+            iid = self.tree.insert("", "end", values=(
+                f"{row['q_display']:.4g}", f"{two_th:.4f}", f"{d_A:.4g}",
+                f"{r_mm:.2f}", f"{r_px:.2f}", physics_status, detector_status,
+            ), tags=tags)
+            self._tree_row_lookup[iid] = row
+            if visible:
+                self._plot_rings.append(dict(
+                    q=q_nm, q_display=row["q_display"], r_px=r_px,
+                    valid=True, physical_valid=True, in_detector=True, visible=True,
                 ))
-                self._plot_rings.append(dict(q=q_nm, r_px=r_px, valid=True))
 
         det_cfg = dict(
             width=float(p["det_w"]), height=float(p["det_h"]),
@@ -698,23 +775,22 @@ class QCalculatorTab(ttk.Frame):
         info_text = self._make_info_text(p)
         self.plot_panel.draw_scene(
             det_cfg, self._plot_rings,
-            selected_q=self._selected_q_nm, info_text=info_text,
+            selected_q=self._selected_q_nm, info_text=info_text, q_unit=q_unit,
         )
 
-        valid_n = len(self._plot_rings)
-        if valid_n == 0:
-            self.status_var.set(
-                f"No valid rings. Ewald Qmax ~ {qmax_ewald:.3g} nm^-1."
-            )
+        physical_n = sum(1 for row in self.result_data if row["physical_valid"])
+        visible_n = sum(1 for row in self.result_data if row["visible"])
+        outside_n = physical_n - visible_n
+        if physical_n == 0:
+            self.status_var.set(f"No physically valid rings. Ewald Qmax ~ {qmax_ewald:.3g} nm^-1.")
         else:
-            u = self.vars["q_unit"].get()
             q_disp_max = max(
-                (r["q_display"] for r in self.result_data if r["valid"]),
+                (r["q_display"] for r in self.result_data if r["physical_valid"]),
                 default=0.0,
             )
-            self.status_var.set(
-                f"{valid_n} rings calculated. Qmax(valid) ~ {q_disp_max:.4g} {u}"
-            )
+            self.status_var.set(f"{physical_n} physically valid; {visible_n} shown; "
+                                f"{outside_n} outside detector. Qmax(valid) ~ "
+                                f"{q_disp_max:.4g} {q_unit}")
 
     # ------------------------------------------------------------------ interactions
 
@@ -773,11 +849,8 @@ class QCalculatorTab(ttk.Frame):
         if not sel:
             self._selected_q_nm = None
             return
-        idx = self.tree.index(sel[0])
-        if 0 <= idx < len(self._plot_rings):
-            self._selected_q_nm = float(self._plot_rings[idx]["q"])
-        else:
-            self._selected_q_nm = None
+        row = self._tree_row_lookup.get(sel[0])
+        self._selected_q_nm = float(row["q"]) if row and row.get("visible", False) else None
         p = self.get_params()
         if not p:
             return
@@ -789,6 +862,7 @@ class QCalculatorTab(ttk.Frame):
         self.plot_panel.draw_scene(
             det_cfg, self._plot_rings,
             selected_q=self._selected_q_nm, info_text=info_text,
+            q_unit=self.vars["q_unit"].get(),
         )
 
     # ------------------------------------------------------------------ presets
@@ -831,15 +905,26 @@ class QCalculatorTab(ttk.Frame):
         self.cb_preset.configure(values=list(BEAMLINE_PRESETS.keys()))
         self.vars["preset"].set(name)
 
-        custom = self.app._load_config_raw().get("q_calc_custom_presets", {})
+        custom = self._custom_presets_from_config(self.app._load_config_raw())
         custom[name] = preset_data
         self.app._update_config_value("q_calc_custom_presets", custom)
         self.app.log(f"Q Calculator: preset '{name}' saved.")
 
+    @staticmethod
+    def _custom_presets_from_config(cfg: dict) -> dict:
+        if not isinstance(cfg, dict):
+            return {}
+        custom = {}
+        for source in (cfg, cfg.get("q_calc")):
+            if isinstance(source, dict) and isinstance(source.get("q_calc_custom_presets"), dict):
+                custom.update(source["q_calc_custom_presets"])
+        return custom
+
     def _load_custom_presets(self, cfg: dict):
-        custom = cfg.get("q_calc_custom_presets", {})
+        custom = self._custom_presets_from_config(cfg)
         for name, data in custom.items():
-            BEAMLINE_PRESETS[name] = data
+            if isinstance(name, str) and name.strip() and isinstance(data, dict):
+                BEAMLINE_PRESETS[name] = dict(data)
         if custom:
             self.cb_preset.configure(values=list(BEAMLINE_PRESETS.keys()))
 
@@ -887,10 +972,15 @@ class QCalculatorTab(ttk.Frame):
             return
         import pandas as pd
         df = pd.DataFrame(self.result_data)
-        cols = ["q", "q_display", "two_theta", "d_A", "r_mm", "r_px", "valid"]
+        cols = ["q", "q_display", "two_theta", "d_A", "r_mm", "r_px", "valid", "physical_valid", "in_detector"]
         df = df[[c for c in cols if c in df.columns]]
         u = self.vars["q_unit"].get()
-        df.rename(columns={"q": "q_nm^-1", "q_display": f"q_{u}", "d_A": "d(A)"}, inplace=True)
+        df.rename(columns={"q": "q_nm^-1", "d_A": "d(A)"}, inplace=True)
+        if "q_display" in df.columns:
+            if u == "nm^-1":
+                df.drop(columns=["q_display"], inplace=True)
+            else:
+                df.rename(columns={"q_display": f"q_{u}"}, inplace=True)
         df.to_csv(path, index=False)
         self.app.log(f"Q Calculator: CSV exported -- {path}")
 
@@ -916,7 +1006,7 @@ class QCalculatorTab(ttk.Frame):
             messagebox.showerror("Export Error", str(e))
 
     def _copy_table(self):
-        rows = ["\t".join(["Q", "2th(deg)", "d(A)", "r(mm)", "r(px)"])]
+        rows = ["\t".join([f"Q ({self.vars['q_unit'].get()})", "2th(deg)", "d(A)", "r(mm)", "r(px)", "Physics", "Detector"])]
         for item in self.tree.get_children():
             vals = self.tree.item(item, "values")
             rows.append("\t".join(str(v) for v in vals))
@@ -953,7 +1043,16 @@ class QCalculatorTab(ttk.Frame):
 
     def load_config(self, cfg: dict):
         self._load_custom_presets(cfg)
-        for k, v in cfg.items():
+        raw_loader = getattr(self.app, "_load_config_raw", None)
+        if callable(raw_loader):
+            try:
+                self._load_custom_presets(raw_loader())
+            except Exception:
+                pass
+        payload = cfg.get("q_calc") if isinstance(cfg, dict) else None
+        if not isinstance(payload, dict):
+            payload = cfg if isinstance(cfg, dict) else {}
+        for k, v in payload.items():
             if k == "q_calc_custom_presets":
                 continue
             if k == "plot_export_preset":
@@ -962,3 +1061,4 @@ class QCalculatorTab(ttk.Frame):
             if k in self.vars:
                 self.vars[k].set(str(v))
         self._sync_energy_from_wavelength()
+        self.run_calculation()
