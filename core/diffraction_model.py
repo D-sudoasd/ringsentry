@@ -92,6 +92,14 @@ class DiffractionModel:
 
         if ratio < -eps or ratio > 1.0 + eps:
             return 0.0, 0.0, 0.0, False
+
+        # Reject the plane-detector horizon in the input domain.  Computing
+        # asin(ratio) first can round an exact 90-degree 2theta value to just
+        # below pi/2 on some platforms and incorrectly mark it as reachable.
+        plane_limit_ratio = math.sin(math.pi / 4.0)
+        if ratio >= plane_limit_ratio - eps:
+            return 0.0, 0.0, 0.0, False
+
         ratio = float(np.clip(ratio, 0.0, 1.0))
 
         theta = math.asin(ratio)
