@@ -153,6 +153,9 @@ class IOTab(ttk.Frame):
             width=24,
         )
         self.workflow_preset_cb.grid(row=0, column=0, sticky="w")
+        self.workflow_preset_cb.bind(
+            "<<ComboboxSelected>>", self._on_workflow_preset_selected
+        )
         ToolTip(self.workflow_preset_cb, "\u4E00\u952E\u5E94\u7528\u5E38\u89C1\u573A\u666F\u53C2\u6570\u6A21\u677F")
 
     # --- Callbacks ---
@@ -162,6 +165,7 @@ class IOTab(ttk.Frame):
         if d:
             self.dir_var.set(d)
             self.input_mode_var.set("directory")
+            self._set_default_output_root_if_empty()
             self.app.log(f"\u5DF2\u9009\u62E9\u8F93\u5165\u6587\u4EF6\u5939: {d}")
 
     def _select_files(self):
@@ -182,6 +186,7 @@ class IOTab(ttk.Frame):
         self._update_selected_files_summary()
         filelist, common_root, skipped = self.app._get_active_input_filelist()
         self.app.selected_common_root = common_root
+        self._set_default_output_root_if_empty()
         if skipped:
             self.app.log(f"\u8DF3\u8FC7 {len(skipped)} \u4E2A\u4E0D\u652F\u6301/\u7F3A\u5931\u7684\u9009\u5B9A\u9879")
         self.app.log(f"\u5DF2\u9009\u62E9 {len(filelist)} \u4E2A\u8F93\u5165\u6587\u4EF6")
@@ -197,6 +202,47 @@ class IOTab(ttk.Frame):
         d = filedialog.askdirectory(title="\u9009\u62E9\u8F93\u51FA\u76EE\u5F55")
         if d:
             self.outdir_var.set(d)
+
+    def _set_default_output_root_if_empty(self):
+        """Show the computed output directory without replacing user input."""
+        if self.outdir_var.get().strip():
+            return
+
+        default_root = ""
+        get_default = getattr(self.app, "_get_default_output_root", None)
+        if get_default is not None:
+            try:
+                default_root = get_default()
+            except Exception:
+                default_root = ""
+
+        if not default_root:
+            if self.input_mode_var.get() == "directory":
+                root = self.dir_var.get().strip()
+                default_root = str(Path(root) / "_converted") if root else ""
+            else:
+                selected = getattr(self.app, "selected_files", [])
+                common_root = getattr(self.app, "selected_common_root", None)
+                if common_root:
+                    default_root = str(Path(common_root) / "_converted")
+                elif selected:
+                    default_root = str(Path(selected[0]).resolve().parent / "_converted")
+
+        if default_root:
+            self.outdir_var.set(str(default_root))
+            self.app.log(f"\u5DF2\u663E\u793A\u9ED8\u8BA4\u8F93\u51FA\u76EE\u5F55: {default_root}")
+
+    def _on_workflow_preset_selected(self, _event=None):
+        """Apply a selected preset immediately so visible fields stay in sync."""
+        preset = self.workflow_preset_var.get()
+        try:
+            self.app._apply_workflow_preset()
+        except Exception as exc:
+            self.app.log(f"\u5DE5\u4F5C\u6D41\u9884\u8BBE\u5E94\u7528\u5931\u8D25 ({preset}): {exc}")
+            return
+        self.app.log(
+            f"\u5DE5\u4F5C\u6D41\u9884\u8BBE\u5DF2\u5373\u65F6\u5E94\u7528: {preset}\uFF1B\u76F8\u5173\u53C2\u6570\u5DF2\u540C\u6B65\u3002"
+        )
 
     def _update_selected_files_summary(self):
         if not self.app.selected_files:

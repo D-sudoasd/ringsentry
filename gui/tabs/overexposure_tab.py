@@ -496,6 +496,12 @@ class OverexposureRepairTab(ttk.Frame):
     def build_config(self):
         if IMPORT_ERROR is not None:
             raise RuntimeError(f"过曝修复依赖不可用: {IMPORT_ERROR}")
+        input_text = self.input_dir.get().strip()
+        output_text = self.output_dir.get().strip()
+        if not input_text:
+            raise ValueError("请指定输入文件夹。")
+        if not output_text:
+            raise ValueError("请指定输出文件夹。")
         notes = self.notes_text.get("1.0", "end").strip() if self.notes_text else ""
         meta = ProjectMetadata(
             project_name=self.project_name.get().strip(),
@@ -507,8 +513,8 @@ class OverexposureRepairTab(ttk.Frame):
             notes=notes,
         )
         cfg = ProcessConfig(
-            input_dir=Path(self.input_dir.get().strip()),
-            output_dir=Path(self.output_dir.get().strip()),
+            input_dir=Path(input_text),
+            output_dir=Path(output_text),
             recursive=self.recursive.get(),
             skip_output_dir=self.skip_output_dir.get(),
             preserve_subfolders=self.preserve_subfolders.get(),
@@ -538,8 +544,6 @@ class OverexposureRepairTab(ttk.Frame):
 
         if not cfg.input_dir.exists() or not cfg.input_dir.is_dir():
             raise ValueError("输入文件夹不存在。")
-        if not str(cfg.output_dir):
-            raise ValueError("请指定输出文件夹。")
         if cfg.input_dir == cfg.output_dir and not cfg.suffix:
             raise ValueError("输入和输出文件夹相同时必须设置输出后缀。")
         return cfg

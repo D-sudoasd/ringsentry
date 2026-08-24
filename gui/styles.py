@@ -4,6 +4,17 @@ import tkinter as tk
 from tkinter import ttk
 
 
+# Keep the application background and status colors in one place so that the
+# labels used by the progress panel remain readable when the theme changes.
+APP_BACKGROUND = "#f6f7f9"
+STATUS_COLORS = {
+    "Success.TLabel": "#146c2e",
+    "Failed.TLabel": "#b42318",
+    "Skipped.TLabel": "#56616f",
+    "Cancelled.TLabel": "#9a3412",
+}
+
+
 def apply_theme(root: tk.Tk):
     """Apply the modern theme to the application."""
     try:
@@ -17,7 +28,7 @@ def apply_theme(root: tk.Tk):
 def configure_styles(root: tk.Tk):
     """Configure custom ttk styles."""
     style = ttk.Style(root)
-    bg = "#f6f7f9"
+    bg = APP_BACKGROUND
     text = "#20242a"
     muted = "#5f6670"
     accent = "#1769aa"
@@ -42,8 +53,7 @@ def configure_styles(root: tk.Tk):
     # Log text style
     style.configure("Log.TFrame", background="#1e1e2e")
 
-    # Stats labels
-    style.configure("Success.TLabel", foreground="#2ecc71")
-    style.configure("Failed.TLabel", foreground="#e74c3c")
-    style.configure("Skipped.TLabel", foreground="#95a5a6")
-    style.configure("Cancelled.TLabel", foreground="#e67e22")
+    # Stats labels.  These colors retain the semantic distinction while
+    # meeting WCAG AA normal-text contrast against the application background.
+    for style_name, foreground in STATUS_COLORS.items():
+        style.configure(style_name, background=bg, foreground=foreground)

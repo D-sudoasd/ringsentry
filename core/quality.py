@@ -55,25 +55,60 @@ def _finite_values(arr: np.ndarray) -> np.ndarray:
     return arr[finite]
 
 
-def _suspected_extreme_count(values: np.ndarray) -> int:
-    """Count robust high-side outliers using median + 8*MAD.
-
-    This is a global robust rule, not a crystallographic interpretation.  It
-    flags likely hot pixels or saturated speckles for manual review.
-    """
+def _robust_extreme_threshold(values: np.ndarray) -> Optional[float]:
+    """Return the shared high-side threshold used for extreme-value counts."""
     if values.size < 9:
-        return 0
+        return None
     median = float(np.median(values))
     mad = float(np.median(np.abs(values - median)))
     if mad <= 0 or not np.isfinite(mad):
-        # 均一背景上叠加少量强亮点时 MAD 会等于 0。此时用“高于中位数”
-        # 作为保守异常计数，避免 p99 恰好落在亮点值上而漏报。
+        # 均一背景上叠加少量强亮点时 MAD 会等于 0；此时仍只计数高于中位数的值。
         if not np.any(values > median):
-            return 0
-        threshold = median
-    else:
-        threshold = median + 8.0 * 1.4826 * mad
+            return None
+        return median
+    return median + 8.0 * 1.4826 * mad
+
+
+def _suspected_extreme_count(values: np.ndarray) -> int:
+    """Count robust high-side outliers using median + 8*MAD.
+
+    This is a global robust rule, not a physical or crystallographic
+    interpretation.  The count is retained as a broad extreme-value metric;
+    spatial isolation is evaluated separately before a hot-pixel suggestion.
+    """
+    threshold = _robust_extreme_threshold(values)
+    if threshold is None:
+        return 0
     return int(np.count_nonzero(values > threshold))
+
+
+def _isolated_extreme_count(image: np.ndarray, values: np.ndarray) -> int:
+    """Count extreme candidates with no other candidate in their 8-neighborhood.
+
+    Candidates use the same global robust threshold as ``_suspected_extreme_count``.
+    A candidate is isolated only when the other eight cells in its 3x3 neighborhood
+    contain no candidate.  This is an explicit image-layout heuristic, not a
+    physical interpretation of the feature.
+    """
+    threshold = _robust_extreme_threshold(values)
+    if threshold is None:
+        return 0
+
+    candidate = np.isfinite(image) & (image > threshold)
+    if not np.any(candidate):
+        return 0
+
+    padded = np.pad(candidate, 1, mode="constant", constant_values=False)
+    neighbors = np.zeros(candidate.shape, dtype=np.uint8)
+    for row_offset in range(3):
+        for col_offset in range(3):
+            if row_offset == 1 and col_offset == 1:
+                continue
+            neighbors += padded[
+                row_offset:row_offset + candidate.shape[0],
+                col_offset:col_offset + candidate.shape[1],
+            ]
+    return int(np.count_nonzero(candidate & (neighbors == 0)))
 
 
 def analyze_image_quality(
@@ -128,6 +163,9 @@ def analyze_image_quality(
             "p99": p99,
             "dynamic_range": vmax - vmin,
             "suspected_extreme_count": _suspected_extreme_count(values),
+            "isolated_extreme_count": _isolated_extreme_count(
+                a.astype(np.float64, copy=False), values
+            ),
         })
     else:
         stats.update({
@@ -140,6 +178,7 @@ def analyze_image_quality(
             "p99": None,
             "dynamic_range": None,
             "suspected_extreme_count": 0,
+            "isolated_extreme_count": 0,
         })
 
     saturated_high_count = 0
@@ -188,14 +227,21 @@ def analyze_image_quality(
             "WARNING", "saturation", "检测到 dtype 上限像素，可能存在饱和。",
             f"saturated_high_count={saturated_high_count}",
         ))
-    if stats["suspected_extreme_count"] > max(10, total * 0.0001):
+    if stats["isolated_extreme_count"] > max(10, total * 0.0001):
         findings.append(QualityFinding(
-            "WARNING", "hot_pixels", "检测到较多极端亮点，可能需要热像素抑制。",
-            f"suspected_extreme_count={stats['suspected_extreme_count']}",
+            "WARNING", "hot_pixels", "检测到较多彼此孤立的极端亮点，建议人工复核。",
+            (
+                f"isolated_extreme_count={stats['isolated_extreme_count']}, "
+                f"suspected_extreme_count={stats['suspected_extreme_count']}, "
+                "neighborhood=8-connected"
+            ),
         ))
         suggestions.append(QualitySuggestion(
             "建议预览 hot pixel suppression；推荐 window=3, sigma=8 起步。",
-            "极端亮点数量超过 robust median+8*MAD 阈值。",
+            (
+                "极端候选超过 robust median+8*MAD 阈值，且每个候选的 8 邻域均无其他候选 "
+                "（MAD=0 时使用高于中位数规则）。"
+            ),
             {"hot_pixel_enable": True, "hot_pixel_window": 3, "hot_pixel_sigma": 8.0},
         ))
 
@@ -312,6 +358,7 @@ def format_quality_report(report: QualityReport) -> str:
         f"范围: min={s['min']}, max={s['max']}, median={s['median']}",
         f"p1/p99: {s['p1']} / {s['p99']}",
         f"疑似极端亮点: {s['suspected_extreme_count']}",
+        f"疑似孤立极端亮点（8 邻域）: {s.get('isolated_extreme_count', 0)}",
         f"饱和上限像素: {s['saturated_high_count']}",
     ]
     if report.findings:

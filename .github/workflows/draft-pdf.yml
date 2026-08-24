@@ -2,13 +2,9 @@ name: Draft JOSS PDF
 
 on:
   push:
-    paths:
-      - "paper/**"
-      - ".github/workflows/draft-pdf.yml"
+    branches:
+      - main
   pull_request:
-    paths:
-      - "paper/**"
-      - ".github/workflows/draft-pdf.yml"
   workflow_dispatch:
 
 permissions:
