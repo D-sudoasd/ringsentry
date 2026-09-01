@@ -127,12 +127,31 @@ success, message, points = save_array(
 )
 if not success:
     raise RuntimeError(message)
+
+png_success, png_message, png_points = save_array(
+    processed,
+    Path("processed.png"),
+    "png",
+    png_options={
+        "vmin": 0.0,
+        "vmax": 1.0,
+        "scale": "linear",
+        "colormap": "viridis",
+        "dpi": 300,
+    },
+)
+if not png_success:
+    raise RuntimeError(png_message)
 ```
 
 Supported `fmt` values are `edf`, `tif`, `npy`, `dat`, `csv`,
-`xycsv`, `xydat`, and `png`. PNG options control scale, colormap, range,
-and DPI, but the result is display-only RGB. The return tuple contains success,
-a message, and the number of points written.
+`xycsv`, `xydat`, and `png`. PNG export is display-only RGB; it is not a
+numerical archive. `png_options` must include the required keys `vmin` and
+`vmax`. RingSentry does not infer a display range if they are omitted.
+Optional keys are `scale` (default `linear`), `colormap` (default `viridis`),
+and `dpi` (default `300`). The `vmin`/`vmax` values in the snippet are
+caller-chosen display limits, not an auto-range. The return tuple contains
+success, a message, and the number of points written.
 
 For XY output, `xy_header`, `xy_one_based`, `xy_skip_zeros`, `xy_zero_tol`, and
 `xy_y_axis_origin` define the row layout. The data file does not necessarily

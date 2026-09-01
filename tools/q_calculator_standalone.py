@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import re
 import math
+import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
 import numpy as np
@@ -42,97 +44,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle, Circle
 
+# Allow ``python tools/q_calculator_standalone.py`` from a source checkout.
+if __package__ in (None, ""):
+    repository_root = Path(__file__).resolve().parents[1]
+    if str(repository_root) not in sys.path:
+        sys.path.insert(0, str(repository_root))
 
-# ----------------------------
-# Core physics model
-# ----------------------------
-class DiffractionModel:
-    """All physical calculations (GUI-independent)."""
-
-    @staticmethod
-    def calc_energy_kev(wavelength_angstrom: float) -> float:
-        """Convert wavelength (Å) to photon energy (keV). E[keV]=12.3984/λ[Å]."""
-        if wavelength_angstrom <= 0:
-            return 0.0
-        return 12.3984 / wavelength_angstrom
-
-    @staticmethod
-    def calc_wavelength_A(energy_kev: float) -> float:
-        """Convert energy (keV) to wavelength (Å). λ[Å]=12.3984/E[keV]."""
-        if energy_kev <= 0:
-            return 0.0
-        return 12.3984 / energy_kev
-
-    @staticmethod
-    def qmax_nm_inv(wavelength_A: float) -> float:
-        """Geometric upper bound from sin(theta)≤1: Qmax = 4π / λ (λ in nm)."""
-        if wavelength_A <= 0:
-            return 0.0
-        lam_nm = wavelength_A * 0.1
-        return (4.0 * math.pi) / lam_nm
-
-    @staticmethod
-    def q_to_radius(
-        q_nm: float,
-        wavelength_A: float,
-        distance_mm: float,
-        pixel_size_mm: float,
-        eps: float = 1e-12,
-    ) -> tuple[float, float, float, bool]:
-        """Compute diffraction radius for given Q.
-
-        Returns:
-            r_mm, r_px, two_theta_deg, valid
-        """
-        if wavelength_A <= 0 or distance_mm <= 0 or pixel_size_mm <= 0 or q_nm < 0:
-            return 0.0, 0.0, 0.0, False
-
-        lam_nm = wavelength_A * 0.1
-        ratio = (q_nm * lam_nm) / (4.0 * math.pi)  # sin(theta)
-
-        if ratio < -eps or ratio > 1.0 + eps:
-            return 0.0, 0.0, 0.0, False
-        ratio = float(np.clip(ratio, 0.0, 1.0))
-
-        theta = math.asin(ratio)
-        two_theta = 2.0 * theta
-
-        # R = D * tan(2θ)
-        if abs((math.pi / 2.0) - two_theta) < 1e-6:
-            return 0.0, 0.0, 0.0, False
-
-        r_mm = distance_mm * math.tan(two_theta)
-        r_px = r_mm / pixel_size_mm
-        return float(r_mm), float(r_px), float(math.degrees(two_theta)), True
-
-    @staticmethod
-    def pixel_to_q(
-        x_px: float,
-        y_px: float,
-        center_x: float,
-        center_y: float,
-        distance_mm: float,
-        pixel_size_mm: float,
-        wavelength_A: float,
-    ) -> tuple[float, float, float]:
-        """Invert: pixel coordinate → Q.
-
-        Returns:
-            q_nm, two_theta_deg, r_mm
-        """
-        if wavelength_A <= 0 or distance_mm <= 0 or pixel_size_mm <= 0:
-            return 0.0, 0.0, 0.0
-
-        dx = (x_px - center_x) * pixel_size_mm
-        dy = (y_px - center_y) * pixel_size_mm
-        r_mm = math.hypot(dx, dy)
-
-        two_theta = math.atan2(r_mm, distance_mm)
-        theta = two_theta / 2.0
-
-        lam_nm = wavelength_A * 0.1
-        q_nm = (4.0 * math.pi * math.sin(theta)) / lam_nm
-        return float(q_nm), float(math.degrees(two_theta)), float(r_mm)
+from core.diffraction_model import DiffractionModel, BEAMLINE_PRESETS
 
 
 class HoverTip:
@@ -283,21 +201,6 @@ class PlotPanel(ttk.Frame):
 # Main app
 # ----------------------------
 class AdvancedQApp(tk.Tk):
-    PRESETS = {
-        "BL19B2 (SAXS)": dict(
-            wavelength_A=0.413, distance_mm=3055.18, pixel_size_mm=0.172,
-            center_x=688.19, center_y=783.68, det_w=1475, det_h=1679
-        ),
-        "DESY (P03)": dict(
-            wavelength_A=0.149, distance_mm=3139.47, pixel_size_mm=0.150,
-            center_x=3390.83, center_y=177.08, det_w=4000, det_h=4000
-        ),
-        "Standard Lab (Cu)": dict(
-            wavelength_A=1.5418, distance_mm=200.0, pixel_size_mm=0.172,
-            center_x=500.0, center_y=500.0, det_w=1000, det_h=1000
-        ),
-    }
-
     Q_UNITS = ("nm^-1", "Å^-1")
 
     def __init__(self):
@@ -436,9 +339,9 @@ class AdvancedQApp(tk.Tk):
         lf_preset = ttk.LabelFrame(left, text="Beamline Preset / 预设", padding=10)
         lf_preset.pack(fill="x", pady=6)
 
-        self.vars["preset"] = tk.StringVar(value=list(self.PRESETS.keys())[0])
+        self.vars["preset"] = tk.StringVar(value=list(BEAMLINE_PRESETS.keys())[0])
         self.cb_preset = ttk.Combobox(
-            lf_preset, textvariable=self.vars["preset"], values=list(self.PRESETS.keys()), state="readonly"
+            lf_preset, textvariable=self.vars["preset"], values=list(BEAMLINE_PRESETS.keys()), state="readonly"
         )
         self.cb_preset.pack(fill="x")
         self.cb_preset.bind("<<ComboboxSelected>>", lambda e: self.load_preset(self.vars["preset"].get()))
@@ -670,11 +573,6 @@ class AdvancedQApp(tk.Tk):
         q_vals = list(np.arange(q0, q1 + dq / 2.0, dq))
         return sorted([q for q in q_vals if q >= 0])
 
-    @staticmethod
-    def _max_radius_in_detector_px(det_w: float, det_h: float, cx: float, cy: float) -> float:
-        corners = [(0, 0), (det_w, 0), (0, det_h), (det_w, det_h)]
-        return max([math.hypot(x - cx, y - cy) for x, y in corners])
-
     def _make_info_text(self, p: dict) -> str:
         wl = float(p["wavelength_A"])
         E = DiffractionModel.calc_energy_kev(wl) if wl > 0 else 0.0
@@ -685,12 +583,12 @@ class AdvancedQApp(tk.Tk):
         cx = float(p["center_x"])
         cy = float(p["center_y"])
 
-        rmax_px = self._max_radius_in_detector_px(det_w, det_h, cx, cy)
+        rmax_px = DiffractionModel.max_radius_px(det_w, det_h, cx, cy)
         rmax_mm = rmax_px * pix
         two_theta_max = math.degrees(math.atan2(rmax_mm, D)) if D > 0 else 0.0
-        theta_max = math.radians(two_theta_max / 2.0)
-        lam_nm = wl * 0.1
-        q_max_det = (4.0 * math.pi * math.sin(theta_max)) / lam_nm if lam_nm > 0 else 0.0
+        q_max_det = DiffractionModel.detector_qmax_nm(
+            det_w, det_h, cx, cy, D, pix, wl,
+        )
 
         return (
             "Meaning:\n"
@@ -886,9 +784,9 @@ class AdvancedQApp(tk.Tk):
         messagebox.showinfo("Physics Help / 物理含义", msg)
 
     def load_preset(self, name: str):
-        if name not in self.PRESETS:
+        if name not in BEAMLINE_PRESETS:
             return
-        p = self.PRESETS[name]
+        p = BEAMLINE_PRESETS[name]
         for k, v in p.items():
             if k in self.vars:
                 self.vars[k].set(str(v))

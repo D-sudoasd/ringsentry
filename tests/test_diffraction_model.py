@@ -1,7 +1,9 @@
+import importlib.util
 import math
 import unittest
+from pathlib import Path
 
-from core.diffraction_model import DiffractionModel
+from core.diffraction_model import BEAMLINE_PRESETS, DiffractionModel
 
 
 class DiffractionModelTests(unittest.TestCase):
@@ -103,6 +105,27 @@ class DiffractionModelTests(unittest.TestCase):
         self.assertTrue(valid)
         self.assertGreater(r_px, 0.0)
         self.assertAlmostEqual(two_theta, 89.0, places=10)
+
+    def test_standalone_uses_core_diffraction_model_and_rejects_horizon(self):
+        path = Path(__file__).resolve().parents[1] / "tools" / "q_calculator_standalone.py"
+        spec = importlib.util.spec_from_file_location(
+            "ringsentry_q_calculator_standalone", path
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        self.assertIs(module.DiffractionModel, DiffractionModel)
+        self.assertIs(module.BEAMLINE_PRESETS, BEAMLINE_PRESETS)
+
+        wavelength_a = 1.0
+        q_at_90_deg = (4.0 * math.pi / (wavelength_a * 0.1)) * math.sin(
+            math.radians(45.0)
+        )
+        _r_mm, _r_px, two_theta, valid = module.DiffractionModel.q_to_radius(
+            q_at_90_deg, wavelength_a, 1000.0, 0.1
+        )
+        self.assertFalse(valid)
+        self.assertEqual(two_theta, 0.0)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,11 @@ from unittest import mock
 
 import numpy as np
 
+try:
+    import tkinter as tk
+except Exception:  # pragma: no cover - tkinter may be unavailable in some envs
+    tk = None
+
 from gui.tabs.q_calculator_tab import (
     BEAMLINE_PRESETS,
     QCalculatorTab,
@@ -14,8 +19,42 @@ from gui.tabs.q_calculator_tab import (
     _ring_label_indices,
 )
 
+_DEFAULT_CALC_PARAMS = {
+    "wavelength_A": "1.0",
+    "energy_keV": "12.3984",
+    "distance_mm": "100.0",
+    "pixel_size_mm": "0.1",
+    "center_x": "10.0",
+    "center_y": "10.0",
+    "det_w": "20",
+    "det_h": "20",
+    "q_start": "0.1",
+    "q_end": "10.0",
+    "q_step": "9.9",
+    "q_unit": "nm^-1",
+}
+
 
 class QCalculatorRegressionTests(unittest.TestCase):
+    def _hidden_root(self):
+        if tk is None:
+            self.skipTest("tkinter is not available")
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except tk.TclError as exc:
+            self.skipTest("Tk display is unavailable: %s" % exc)
+        self.addCleanup(root.destroy)
+        return root
+
+    def _string_vars(self, root, **overrides):
+        values = dict(_DEFAULT_CALC_PARAMS)
+        values.update(overrides)
+        return {
+            key: tk.StringVar(master=root, value=str(value))
+            for key, value in values.items()
+        }
+
     def test_dense_ring_plot_throttles_labels_but_keeps_endpoints(self):
         indices = _ring_label_indices(101)
 
@@ -103,16 +142,6 @@ class QCalculatorRegressionTests(unittest.TestCase):
         self.assertIn("1 A^-1", labels)
 
     def test_calculation_keeps_out_of_detector_rows_but_only_plots_visible(self):
-        class Var:
-            def __init__(self, value):
-                self.value = value
-
-            def get(self):
-                return self.value
-
-            def set(self, value):
-                self.value = value
-
         class FakeText:
             def get(self, *_args):
                 return ""
@@ -148,10 +177,9 @@ class QCalculatorRegressionTests(unittest.TestCase):
             def set(self, value):
                 self.value = value
 
+        root = self._hidden_root()
         tab = QCalculatorTab.__new__(QCalculatorTab)
-        tab.vars = {
-            "q_unit": Var("nm^-1"),
-        }
+        tab.vars = self._string_vars(root)
         tab.q_text = FakeText()
         tab.tree = FakeTree()
         tab.plot_panel = FakePlot()
@@ -159,23 +187,36 @@ class QCalculatorRegressionTests(unittest.TestCase):
         tab.result_data = []
         tab._plot_rings = []
         tab._selected_q_nm = None
-        tab.get_params = lambda: {
-            "wavelength_A": 1.0,
-            "energy_keV": 12.3984,
-            "distance_mm": 100.0,
-            "pixel_size_mm": 0.1,
-            "center_x": 10.0,
-            "center_y": 10.0,
-            "det_w": 20,
-            "det_h": 20,
-            "q_start": 0.1,
-            "q_end": 10.0,
-            "q_step": 9.9,
-        }
 
-        tab.run_calculation()
+        with mock.patch("gui.tabs.q_calculator_tab.messagebox.showerror") as showerror:
+            tab.vars["energy_keV"].set("0")
+            self.assertIsNone(tab.get_params())
+            showerror.assert_called()
+            self.assertIn("energy_keV", showerror.call_args[0][1])
+
+            tab.vars["energy_keV"].set("12.3984")
+            tab.vars["q_step"].set("0")
+            self.assertIsNone(tab.get_params())
+            self.assertIn("q_step", showerror.call_args[0][1])
+
+            tab.result_data = [{"sentinel": True}]
+            tab.run_calculation()
+            self.assertEqual(tab.result_data, [{"sentinel": True}])
+
+            tab.vars["q_step"].set("9.9")
+            parsed = tab.get_params()
+            self.assertIsNotNone(parsed)
+            self.assertAlmostEqual(parsed["wavelength_A"], 1.0)
+            self.assertAlmostEqual(parsed["q_start"], 0.1)
+            self.assertAlmostEqual(parsed["q_end"], 10.0)
+            self.assertAlmostEqual(parsed["q_step"], 9.9)
+
+            tab.result_data = []
+            tab.run_calculation()
 
         self.assertEqual(len(tab.result_data), 2)
+        self.assertAlmostEqual(tab.result_data[0]["q"], 0.1)
+        self.assertAlmostEqual(tab.result_data[1]["q"], 10.0)
         self.assertTrue(tab.result_data[0]["physical_valid"])
         self.assertTrue(tab.result_data[0]["in_detector"])
         self.assertTrue(tab.result_data[1]["physical_valid"])

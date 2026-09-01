@@ -1,5 +1,7 @@
 """Image preview window with ROI selection, comparison view, and line profile."""
 
+import queue
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
@@ -138,6 +140,122 @@ def _preview_processing_arrays(
     return coordinate_img, final_img
 
 
+class _PreviewSetupError(Exception):
+    """Invalid preview settings that should use the settings-error dialog."""
+
+
+def _tk_var_get(container, name, default=None):
+    """Read a Tk variable from a tab without requiring every test double."""
+    if container is None:
+        return default
+    var = getattr(container, name, None)
+    if var is None:
+        return default
+    try:
+        return var.get()
+    except Exception:
+        return default
+
+
+def _set_preview_busy_cursor(app, busy):
+    cursor = "watch" if busy else ""
+    try:
+        app.config(cursor=cursor)
+    except (AttributeError, tk.TclError, RuntimeError, TypeError):
+        pass
+
+
+def _snapshot_preview_settings(app, first_file, png_enabled, png_opts):
+    """Copy Tk-backed preview inputs so the worker never touches widgets."""
+    proc_tab = getattr(app, "processing_tab", None)
+    geo_tab = getattr(app, "geometry_tab", None)
+    return {
+        "first_file": first_file,
+        "h5_path": _tk_var_get(getattr(app, "io_tab", None), "h5_path_var", ""),
+        "roi_text": _tk_var_get(proc_tab, "roi_var", ""),
+        "dark_frame": getattr(app, "dark_frame", None),
+        "flat_frame": getattr(app, "flat_frame", None),
+        "mask_frame": getattr(app, "mask_frame", None),
+        "flat_is_dark_subtracted": _tk_var_get(
+            proc_tab, "flat_is_dark_subtracted_var", True
+        ),
+        "mask_nonzero_is_invalid": _tk_var_get(
+            proc_tab, "mask_nonzero_is_invalid_var", True
+        ),
+        "clip_negative": _tk_var_get(proc_tab, "clip_negative_var", False),
+        "bg_offset": _tk_var_get(proc_tab, "bg_offset_var", 0.0),
+        "min_intensity": parse_optional_float(
+            _tk_var_get(proc_tab, "min_intensity_var", "")
+        ),
+        "max_intensity": parse_optional_float(
+            _tk_var_get(proc_tab, "max_intensity_var", "")
+        ),
+        "rotate_deg": _tk_var_get(geo_tab, "rotate_var", "0"),
+        "flip_x": _tk_var_get(geo_tab, "flip_x_var", False),
+        "flip_y": _tk_var_get(geo_tab, "flip_y_var", False),
+        "bin_factor": _tk_var_get(geo_tab, "bin_factor_var", 1),
+        "pclip_low": parse_optional_float(_tk_var_get(geo_tab, "pclip_low_var", "")),
+        "pclip_high": parse_optional_float(_tk_var_get(geo_tab, "pclip_high_var", "")),
+        "intensity_transform": _tk_var_get(
+            geo_tab, "intensity_transform_var", "none"
+        ),
+        "gamma": _tk_var_get(geo_tab, "gamma_var", 1.0),
+        "norm_mode": _tk_var_get(geo_tab, "norm_mode_var", "none"),
+        "hot_pixel_enable": _tk_var_get(geo_tab, "hot_pixel_enable_var", False),
+        "hot_pixel_window": _tk_var_get(geo_tab, "hot_pixel_window_var", 3),
+        "hot_pixel_sigma": _tk_var_get(geo_tab, "hot_pixel_sigma_var", 8.0),
+        "png_enabled": png_enabled,
+        "png_opts": png_opts,
+    }
+
+
+def _load_preview_payload(snapshot):
+    """Load and process preview arrays. Safe to call off the Tk thread."""
+    img = load_image(snapshot["first_file"], snapshot["h5_path"])
+    try:
+        roi = parse_roi_text(snapshot["roi_text"])
+        if roi:
+            x, y, w, h = roi
+            if x + w > img.shape[1] or y + h > img.shape[0]:
+                raise ValueError(
+                    f"ROI \u8D85\u51FA\u56FE\u50CF\u8303\u56F4 {img.shape}"
+                )
+    except Exception as exc:
+        raise _PreviewSetupError(str(exc)) from exc
+
+    coordinate_img, processed_img = _preview_processing_arrays(
+        img,
+        dark_frame=snapshot["dark_frame"],
+        flat_frame=snapshot["flat_frame"],
+        flat_is_dark_subtracted=snapshot["flat_is_dark_subtracted"],
+        roi=roi,
+        mask_frame=snapshot["mask_frame"],
+        mask_nonzero_is_invalid=snapshot["mask_nonzero_is_invalid"],
+        clip_negative=snapshot["clip_negative"],
+        bg_offset=snapshot["bg_offset"],
+        min_intensity=snapshot["min_intensity"],
+        max_intensity=snapshot["max_intensity"],
+        rotate_deg=snapshot["rotate_deg"],
+        flip_x=snapshot["flip_x"],
+        flip_y=snapshot["flip_y"],
+        bin_factor=snapshot["bin_factor"],
+        pclip_low=snapshot["pclip_low"],
+        pclip_high=snapshot["pclip_high"],
+        intensity_transform=snapshot["intensity_transform"],
+        gamma=snapshot["gamma"],
+        norm_mode=snapshot["norm_mode"],
+        hot_pixel_enable=snapshot["hot_pixel_enable"],
+        hot_pixel_window=snapshot["hot_pixel_window"],
+        hot_pixel_sigma=snapshot["hot_pixel_sigma"],
+    )
+    return {
+        "raw_img": img.astype(np.float32),
+        "coordinate_img": coordinate_img,
+        "processed_img": processed_img,
+        "roi": roi,
+    }
+
+
 def show_preview(app, target_file=None):
     """Open a preview window with comparison, single, and line profile modes."""
     first_file = _resolve_preview_target(app, target_file)
@@ -171,64 +289,81 @@ def show_preview(app, target_file=None):
     else:
         png_opts = None
 
-    try:
-        img = load_image(first_file, app.io_tab.h5_path_var.get())
+    snapshot = _snapshot_preview_settings(app, first_file, png_enabled, png_opts)
+    result_queue = queue.Queue()
+    _set_preview_busy_cursor(app, True)
 
-        # Preview and batch execution use the same fail-closed ROI semantics.
+    def worker():
         try:
-            roi = parse_roi_text(app.processing_tab.roi_var.get())
-            if roi:
-                x, y, w, h = roi
-                if x + w > img.shape[1] or y + h > img.shape[0]:
-                    raise ValueError(
-                        f"ROI \u8D85\u51FA\u56FE\u50CF\u8303\u56F4 {img.shape}"
-                    )
-        except Exception as e:
+            result_queue.put(("ok", _load_preview_payload(snapshot)))
+        except Exception as exc:
+            result_queue.put(("error", exc))
+
+    def present():
+        _set_preview_busy_cursor(app, False)
+        try:
+            if hasattr(app, "winfo_exists") and not app.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        try:
+            kind, payload = result_queue.get_nowait()
+        except queue.Empty:
             messagebox.showerror(
-                "\u8BBE\u7F6E\u65E0\u6548", f"\u5904\u7406\u8BBE\u7F6E\u9519\u8BEF: {e}"
+                "\u9884\u89C8\u9519\u8BEF",
+                "\u65E0\u6CD5\u751F\u6210\u9884\u89C8: empty preview queue",
             )
             return
+        if kind == "error":
+            if isinstance(payload, _PreviewSetupError):
+                messagebox.showerror(
+                    "\u8BBE\u7F6E\u65E0\u6548",
+                    f"\u5904\u7406\u8BBE\u7F6E\u9519\u8BEF: {payload}",
+                )
+            else:
+                messagebox.showerror(
+                    "\u9884\u89C8\u9519\u8BEF",
+                    f"\u65E0\u6CD5\u751F\u6210\u9884\u89C8: {payload}",
+                )
+            return
+        _present_preview_window(app, snapshot, payload)
 
+    worker_thread = threading.Thread(target=worker, daemon=True)
+    worker_thread.start()
+    after = getattr(app, "after", None)
+    if callable(after):
+        def poll():
+            if worker_thread.is_alive():
+                try:
+                    after(50, poll)
+                    return
+                except (RuntimeError, tk.TclError):
+                    pass
+            present()
+
+        try:
+            after(50, poll)
+            return
+        except (RuntimeError, tk.TclError, TypeError):
+            pass
+    worker_thread.join()
+    present()
+
+
+def _present_preview_window(app, snapshot, payload):
+    """Build matplotlib/Tk preview widgets. Must run on the Tk thread."""
+    first_file = snapshot["first_file"]
+    png_enabled = snapshot["png_enabled"]
+    png_opts = snapshot["png_opts"]
+    raw_img = payload["raw_img"]
+    coordinate_img = payload["coordinate_img"]
+    processed_img = payload["processed_img"]
+    roi = payload["roi"]
+
+    try:
         Figure, FigureCanvasTkAgg = _lazy_import_matplotlib()
         import matplotlib
         apply_matplotlib_style(matplotlib, preset="raw_inspection")
-
-        # Gather settings from tabs
-        proc_tab = app.processing_tab
-        geo_tab = app.geometry_tab
-        min_i = parse_optional_float(proc_tab.min_intensity_var.get())
-        max_i = parse_optional_float(proc_tab.max_intensity_var.get())
-
-        # Raw image (no processing)
-        raw_img = img.astype(np.float32)
-
-        # Keep a coordinate-space view for ROI/line selection, and a separate
-        # batch-equivalent result for final preview and output rendering.
-        coordinate_img, processed_img = _preview_processing_arrays(
-            img,
-            dark_frame=app.dark_frame,
-            flat_frame=app.flat_frame,
-            flat_is_dark_subtracted=proc_tab.flat_is_dark_subtracted_var.get(),
-            roi=roi,
-            mask_frame=app.mask_frame,
-            mask_nonzero_is_invalid=proc_tab.mask_nonzero_is_invalid_var.get(),
-            clip_negative=proc_tab.clip_negative_var.get(),
-            bg_offset=proc_tab.bg_offset_var.get(),
-            min_intensity=min_i,
-            max_intensity=max_i,
-            rotate_deg=geo_tab.rotate_var.get(),
-            flip_x=geo_tab.flip_x_var.get(),
-            flip_y=geo_tab.flip_y_var.get(),
-            bin_factor=geo_tab.bin_factor_var.get(),
-            pclip_low=parse_optional_float(geo_tab.pclip_low_var.get()),
-            pclip_high=parse_optional_float(geo_tab.pclip_high_var.get()),
-            intensity_transform=geo_tab.intensity_transform_var.get(),
-            gamma=geo_tab.gamma_var.get(),
-            norm_mode=geo_tab.norm_mode_var.get(),
-            hot_pixel_enable=geo_tab.hot_pixel_enable_var.get(),
-            hot_pixel_window=geo_tab.hot_pixel_window_var.get(),
-            hot_pixel_sigma=geo_tab.hot_pixel_sigma_var.get(),
-        )
 
         win = tk.Toplevel(app)
         win.title(f"\u9884\u89C8: {first_file.name}")
@@ -535,14 +670,20 @@ def show_preview(app, target_file=None):
                     return
                 line_points.append((event.xdata, event.ydata))
                 if len(line_points) == 1:
-                    # Draw marker for first point
-                    ax_list = fig.get_axes()
-                    if ax_list:
-                        artist, = ax_list[0].plot(
+                    marker_axes = []
+                    if event.inaxes is not None:
+                        marker_axes = [event.inaxes]
+                    elif line_image_axes:
+                        marker_axes = list(line_image_axes)
+                    for ax in marker_axes:
+                        if ax is None:
+                            continue
+                        artist, = ax.plot(
                             event.xdata, event.ydata,
                             'ro', markersize=6,
                         )
                         line_artists.append(artist)
+                    if marker_axes:
                         canvas.draw()
                 elif len(line_points) == 2:
                     update_line_profile()
@@ -599,7 +740,7 @@ def show_preview(app, target_file=None):
                 linestyle=':',
             )
             roi_target_ax[0].add_patch(current_rect[0])
-            canvas.draw()
+            canvas.draw_idle()
 
         canvas.mpl_connect('button_press_event', on_mouse_press)
         canvas.mpl_connect('button_release_event', on_mouse_release)

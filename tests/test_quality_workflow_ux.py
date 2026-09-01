@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from gui.app import App
 from gui.tabs.io_tab import IOTab
 from gui.tabs.quality_tab import QualityTab
 
@@ -53,6 +54,14 @@ class QualityWorkflowUXTests(unittest.TestCase):
         tab.input_mode_var = _Var("directory")
         tab.selected_files_var = _Var("无")
         tab.workflow_preset_var = _Var("Custom")
+        if not hasattr(app, "io_tab"):
+            app.io_tab = tab
+        if not hasattr(app, "selected_files"):
+            app.selected_files = []
+        if not hasattr(app, "selected_common_root"):
+            app.selected_common_root = None
+        if not hasattr(app, "_get_default_output_root"):
+            app._get_default_output_root = lambda: App._get_default_output_root(app)
         return tab
 
     def test_selecting_input_directory_shows_default_output_without_overwriting_custom(self):
@@ -87,7 +96,26 @@ class QualityWorkflowUXTests(unittest.TestCase):
         tab._on_workflow_preset_selected()
 
         self.assertEqual(calls, ["applied"])
+        self.assertEqual(tab.workflow_preset_var.get(), "Custom")
         self.assertTrue(any("SAXS Quick" in message for message in messages))
+
+    def test_files_mode_default_output_uses_app_get_default_output_root(self):
+        selected = Path("E:/data/sample/frame.tif")
+        app = SimpleNamespace(
+            log=lambda _message: None,
+            selected_files=[str(selected)],
+            selected_common_root=None,
+        )
+        tab = self._io_tab(app)
+        tab.input_mode_var.set("files")
+
+        tab._set_default_output_root_if_empty()
+
+        expected = str(Path(str(selected)).resolve().parent / "_converted")
+        self.assertEqual(
+            tab.outdir_var.get().replace("\\", "/"),
+            expected.replace("\\", "/"),
+        )
 
     def _quality_tab_stub(self, app):
         tab = QualityTab.__new__(QualityTab)

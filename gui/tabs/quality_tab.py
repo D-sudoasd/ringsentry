@@ -123,12 +123,13 @@ class QualityTab(ttk.Frame):
             font=("Microsoft YaHei UI", 9),
             state="disabled",
             takefocus=True,
+            highlightthickness=1,
         )
         self.suggestion_scrollbar = ttk.Scrollbar(
             suggestion_frame,
             orient="vertical",
             command=self.suggestion_text.yview,
-            takefocus=True,
+            takefocus=False,
         )
         self.suggestion_text.configure(
             yscrollcommand=self.suggestion_scrollbar.set,

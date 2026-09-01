@@ -61,7 +61,6 @@ class OverexposureRepairTab(ttk.Frame):
         self._poll_after_id = None
         self._vars()
         self._layout()
-        self._localize_ui_text()
         self._check_imports()
         self._poll_after_id = self.after(100, self._poll)
 
@@ -117,6 +116,7 @@ class OverexposureRepairTab(ttk.Frame):
         self.load_config_btn.grid(row=0, column=2, padx=4)
 
         nb = ttk.Notebook(self)
+        self.repair_notebook = nb
         nb.grid(row=1, column=0, sticky="nsew", pady=(10, 8))
 
         self.tab_basic = ttk.Frame(nb, padding=10)
@@ -171,103 +171,6 @@ class OverexposureRepairTab(ttk.Frame):
             row=4, column=0, sticky="ew"
         )
 
-    def _localize_ui_text(self):
-        """Replace legacy mojibake labels with readable Chinese UI text."""
-        self.status.set("请选择输入/输出文件夹；建议先运行“只扫描”。")
-        self.summary.set("未运行。")
-
-        self.repair_notebook = self.tab_basic.master
-        for index, label in enumerate(
-            ["文件与输出", "修复规则", "安全与复现", "项目元数据", "日志"]
-        ):
-            self.repair_notebook.tab(index, text=label)
-
-        self.save_config_btn.configure(text="保存配置")
-        self.load_config_btn.configure(text="加载配置")
-        self.scan_btn.configure(text="只扫描")
-        self.dry_btn.configure(text="模拟修复 Dry-run")
-        self.run_btn.configure(text="开始安全修复")
-        self.stop_btn.configure(text="停止后续任务")
-        self.open_out_btn.configure(text="打开输出目录")
-        self.open_report_btn.configure(text="打开 QC 报告")
-
-        basic_io = self.tab_basic.grid_slaves(row=0, column=0)[0]
-        behavior = self.tab_basic.grid_slaves(row=1, column=0)[0]
-        suffix_box = behavior.grid_slaves(row=3, column=0)[0]
-        rules = self.tab_rules.grid_slaves(row=0, column=0)[0]
-        rules_info = self.tab_rules.grid_slaves(row=1, column=0)[0]
-        safety = self.tab_safety.grid_slaves(row=0, column=0)[0]
-        criteria = self.tab_safety.grid_slaves(row=1, column=0)[0]
-        meta = self.tab_meta.grid_slaves(row=0, column=0)[0]
-
-        basic_io.configure(text="输入/输出")
-        behavior.configure(text="批处理行为")
-        rules.configure(text="像素替换规则")
-        safety.configure(text="安全与可追溯")
-        meta.configure(text="项目元数据（写入配置和 QC 报告，不改 CBF 数据）")
-
-        basic_io.grid_slaves(row=0, column=0)[0].configure(text="输入文件夹")
-        basic_io.grid_slaves(row=1, column=0)[0].configure(text="输出文件夹")
-        basic_io.grid_slaves(row=0, column=2)[0].configure(text="选择输入文件夹")
-        basic_io.grid_slaves(row=1, column=2)[0].configure(text="选择输出文件夹")
-        suffix_box.pack_slaves()[0].configure(text="输出后缀")
-        suffix_box.pack_slaves()[2].configure(
-            text="例如 sample.cbf -> sample_zero2sat.cbf"
-        )
-
-        for row, column, text in [
-            (0, 0, "递归处理子文件夹"),
-            (0, 1, "跳过输出目录"),
-            (1, 0, "保留子目录结构"),
-            (1, 1, "覆盖已存在输出"),
-            (2, 0, "未修改文件也复制"),
-        ]:
-            behavior.grid_slaves(row=row, column=column)[0].configure(text=text)
-
-        rules.grid_slaves(row=0, column=0)[0].configure(text="异常值")
-        rules.grid_slaves(row=0, column=2)[0].configure(text="替换为")
-        rules.grid_slaves(row=0, column=4)[0].configure(
-            text="示例值：只有采集链证据确认后，才可将 0 替换为 32766。"
-        )
-        rules.grid_slaves(row=1, column=0)[0].configure(
-            text="所有匹配值都替换（需仪器/采集软件证据）"
-        )
-        rules.grid_slaves(row=2, column=0)[0].configure(
-            text="只替换强峰附近异常值（保守，避免真实背景 0 被替换）"
-        )
-        rules.grid_slaves(row=3, column=0)[0].configure(text="强峰阈值")
-        rules.grid_slaves(row=3, column=2)[0].configure(text="邻域半径/像素")
-        rules_info.configure(
-            text=(
-                "建议流程：先用“只扫描”确认 0 像素数量和分布，"
-                "再用 Dry-run 检查预计替换数量，最后正式修复。\n"
-                "零值也可能来自 beamstop、模块间隙、掩膜或真实低计数；未经确认不应修改。\n"
-                "本工具不能恢复真实过曝强度；它只执行用户已确认的存储值替换规则。"
-            )
-        )
-
-        safety.grid_slaves(row=0, column=0)[0].configure(
-            text="写出后重新读回逐像素校验"
-        )
-        safety.grid_slaves(row=1, column=0)[0].configure(text="计算 SHA256 哈希")
-        safety.grid_slaves(row=2, column=0)[0].configure(text="生成 HTML QC 报告")
-        safety.grid_slaves(row=3, column=0)[0].configure(text="并行 worker 数")
-        criteria.configure(
-            text=(
-                "安全通过判据：\n"
-                "  status = repaired_verified\n"
-                "  nontarget_changed_before_write = 0\n"
-                "  target_not_replaced_before_write = 0\n"
-                "  readback_different_pixels = 0\n"
-                "  readback_nontarget_different_pixels = 0"
-            )
-        )
-
-        meta_labels = ["项目名称", "操作者", "样品", "线站", "探测器", "实验日期", "备注"]
-        for row, text in enumerate(meta_labels):
-            meta.grid_slaves(row=row, column=0)[0].configure(text=text)
-        return
-
     def _layout_basic(self):
         f = self.tab_basic
         f.columnconfigure(0, weight=1)
@@ -281,14 +184,18 @@ class OverexposureRepairTab(ttk.Frame):
         ttk.Entry(box, textvariable=self.input_dir).grid(
             row=0, column=1, sticky="ew", padx=8, pady=8
         )
-        self.choose_input_btn = ttk.Button(box, text="选择", command=self.choose_input)
+        self.choose_input_btn = ttk.Button(
+            box, text="选择输入文件夹", command=self.choose_input
+        )
         self.choose_input_btn.grid(row=0, column=2, padx=8)
         self.output_dir_label = ttk.Label(box, text="输出文件夹")
         self.output_dir_label.grid(row=1, column=0, sticky="w", padx=8, pady=8)
         ttk.Entry(box, textvariable=self.output_dir).grid(
             row=1, column=1, sticky="ew", padx=8, pady=8
         )
-        self.choose_output_btn = ttk.Button(box, text="选择", command=self.choose_output)
+        self.choose_output_btn = ttk.Button(
+            box, text="选择输出文件夹", command=self.choose_output
+        )
         self.choose_output_btn.grid(row=1, column=2, padx=8)
 
         self.behavior_frame = ttk.LabelFrame(f, text="批处理行为")
@@ -351,7 +258,7 @@ class OverexposureRepairTab(ttk.Frame):
         ).grid(row=1, column=0, columnspan=5, sticky="w", padx=8, pady=6)
         ttk.Radiobutton(
             box,
-            text="只替换强峰附近异常值（保守，防止真实背景 0 被替换）",
+            text="只替换强峰附近异常值（保守，避免真实背景 0 被替换）",
             variable=self.mode,
             value="near_bright",
         ).grid(row=2, column=0, columnspan=5, sticky="w", padx=8, pady=6)
@@ -367,7 +274,7 @@ class OverexposureRepairTab(ttk.Frame):
 
         info = (
             "建议流程：先用“只扫描”确认 0 像素数量和分布，"
-            "再用 Dry-run 检查预期替换数量，最后正式修复。\n"
+            "再用 Dry-run 检查预计替换数量，最后正式修复。\n"
             "零值也可能来自 beamstop、模块间隙、掩膜或真实低计数；未经确认不应修改。\n"
             "本工具不能恢复真实过曝强度；它只执行用户已确认的存储值替换规则。"
         )
@@ -421,7 +328,7 @@ class OverexposureRepairTab(ttk.Frame):
         box.grid(row=0, column=0, sticky="ew")
         box.columnconfigure(1, weight=1)
         fields = [
-            ("项目名", self.project_name),
+            ("项目名称", self.project_name),
             ("操作者", self.operator),
             ("样品", self.sample),
             ("线站", self.beamline),
@@ -622,8 +529,33 @@ class OverexposureRepairTab(ttk.Frame):
         self.dry_run.set(True)
         self.start("repair")
 
+    def _conversion_is_active(self):
+        """Return whether the main conversion batch currently owns the GUI."""
+        app = getattr(self, "app", None)
+        if app is None:
+            return False
+        conversion_check = getattr(app, "_conversion_is_active", None)
+        if callable(conversion_check):
+            try:
+                return bool(conversion_check())
+            except Exception:
+                pass
+        if getattr(app, "is_running", False):
+            return True
+        if getattr(app, "thread_pool", None) is not None:
+            return True
+        coordinator = getattr(app, "_conversion_thread", None)
+        is_alive = getattr(coordinator, "is_alive", None) if coordinator is not None else None
+        return bool(callable(is_alive) and is_alive())
+
     def start(self, action: str):
         if self.worker and self.worker.is_alive():
+            return
+        if self._conversion_is_active():
+            messagebox.showwarning(
+                "正在运行",
+                "当前批处理尚未结束，请等待完成或先取消当前任务。",
+            )
             return
         try:
             cfg = self.build_config()

@@ -997,6 +997,86 @@ class OverexposureRepairTests(unittest.TestCase):
 
             self.assertFalse(missing_root.exists())
 
+    def test_near_bright_replaces_only_zeros_next_to_bright_peak(self):
+        data = np.full((9, 9), 10, dtype=np.int32)
+        data[4, 4] = 25000  # bright peak
+        data[4, 7] = 0      # Chebyshev distance 3, inside radius
+        data[0, 0] = 0      # Chebyshev distance 4, isolated from the peak
+
+        cfg = repair.ProcessConfig(
+            input_dir=Path("."),
+            output_dir=Path("."),
+            mode="near_bright",
+            zero_value=0,
+            replacement_value=32766,
+            bright_threshold=20000,
+            radius=3,
+        )
+        zero_mask, target_mask = repair.make_target_mask(data, cfg)
+        near = repair.near_bright_mask(
+            data, zero_mask, cfg.bright_threshold, cfg.radius
+        )
+        self.assertTrue(np.array_equal(target_mask, near))
+        self.assertTrue(zero_mask[0, 0])
+        self.assertTrue(zero_mask[4, 7])
+        self.assertFalse(target_mask[0, 0])
+        self.assertTrue(target_mask[4, 7])
+        self.assertEqual(int(np.count_nonzero(target_mask)), 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            input_dir = tmp / "input"
+            output_dir = tmp / "output"
+            input_dir.mkdir()
+            source = input_dir / "near.cbf"
+            write_cbf(source, data)
+            original_bytes = source.read_bytes()
+            proc_cfg = self.make_config(input_dir, output_dir)
+            proc_cfg.mode = "near_bright"
+            proc_cfg.bright_threshold = 20000
+            proc_cfg.radius = 3
+            proc_cfg.copy_unmodified = False
+            result = repair.process_file(source, proc_cfg)
+
+            self.assertEqual(result.status, "repaired_verified")
+            self.assertEqual(result.zero_pixels, 2)
+            self.assertEqual(result.target_pixels, 1)
+            self.assertEqual(result.replaced_pixels, 1)
+            self.assertEqual(source.read_bytes(), original_bytes)
+            repaired = read_cbf(output_dir / "near.cbf")
+            self.assertEqual(int(repaired[4, 4]), 25000)
+            self.assertEqual(int(repaired[4, 7]), 32766)
+            self.assertEqual(int(repaired[0, 0]), 0)
+            self.assertEqual(int(repaired[1, 1]), 10)
+
+    def test_minor_zero_pixel_threshold_leaves_file_unmodified(self):
+        data = np.array([[5, 0, 7], [8, 0, 10]], dtype=np.int32)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            input_dir = tmp / "input"
+            output_dir = tmp / "output"
+            input_dir.mkdir()
+            source = input_dir / "minor.cbf"
+            write_cbf(source, data)
+            original_bytes = source.read_bytes()
+            cfg = self.make_config(input_dir, output_dir)
+            cfg.minor_zero_pixel_threshold = 2
+            cfg.copy_unmodified = False
+
+            _zero_mask, target_mask = repair.make_target_mask(data, cfg)
+            actionable, ignored = repair.apply_minor_zero_threshold(target_mask, cfg)
+            self.assertEqual(int(np.count_nonzero(target_mask)), 2)
+            self.assertEqual(ignored, 2)
+            self.assertFalse(np.any(actionable))
+
+            result = repair.process_file(source, cfg)
+            self.assertEqual(result.status, "minor_zero_ignored")
+            self.assertEqual(result.ignored_zero_pixels, 2)
+            self.assertEqual(result.target_pixels, 0)
+            self.assertEqual(result.replaced_pixels, 0)
+            self.assertEqual(source.read_bytes(), original_bytes)
+            self.assertFalse((output_dir / "minor.cbf").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

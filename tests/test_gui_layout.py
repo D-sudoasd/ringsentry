@@ -82,6 +82,8 @@ class GuiLayoutTests(unittest.TestCase):
                 self.assertTrue(hasattr(tab, "body"))
 
             self.assertTrue(hasattr(app.processing_tab, "roi_var"))
+            self.assertTrue(hasattr(app.io_tab, "files_entry"))
+            self.assertEqual(str(app.io_tab.files_entry.cget("state")), "readonly")
             self.assertTrue(hasattr(app.output_tab, "format_vars"))
             self.assertTrue(hasattr(app.geometry_tab, "bin_factor_var"))
             self.assertTrue(hasattr(app.quality_tab, "result_text"))

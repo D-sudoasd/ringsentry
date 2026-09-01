@@ -20,9 +20,11 @@ def apply_theme(root: tk.Tk):
     try:
         import sv_ttk
         sv_ttk.set_theme("light")
+        root._ringsentry_sv_ttk = True
     except ImportError:
         style = ttk.Style(root)
         style.theme_use('clam')
+        root._ringsentry_sv_ttk = False
 
 
 def configure_styles(root: tk.Tk):
@@ -41,11 +43,12 @@ def configure_styles(root: tk.Tk):
     style.configure("TLabelframe.Label", font=("Microsoft YaHei UI", 10, "bold"))
     style.configure("TCheckbutton", font=("Microsoft YaHei UI", 9))
     style.configure("TButton", font=("Microsoft YaHei UI", 9))
-    style.configure(
-        "Accent.TButton",
-        font=("Microsoft YaHei UI", 10, "bold"),
-        foreground=accent,
-    )
+    # sv_ttk Accent.TButton already uses a filled accent with a light label.
+    # Forcing a dark-blue foreground there makes the Run button unreadable.
+    accent_options = {"font": ("Microsoft YaHei UI", 10, "bold")}
+    if not getattr(root, "_ringsentry_sv_ttk", False):
+        accent_options["foreground"] = accent
+    style.configure("Accent.TButton", **accent_options)
 
     # Tab style
     style.configure("TNotebook.Tab", font=("Microsoft YaHei UI", 10), padding=[16, 8])

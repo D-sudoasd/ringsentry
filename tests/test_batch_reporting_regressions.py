@@ -93,7 +93,6 @@ def test_preflight_reads_quality_sample_count_and_caps_it(tmp_path, monkeypatch)
         "metadata": {},
     }
     monkeypatch.setattr("gui.app.load_image_with_info", lambda *_args: loaded)
-    monkeypatch.setattr("gui.app.sniff_file_kind", lambda _path: "edf")
 
     assert App._run_preflight_checks(
         app,

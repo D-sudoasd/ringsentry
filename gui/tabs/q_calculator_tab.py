@@ -692,9 +692,9 @@ class QCalculatorTab(ttk.Frame):
         rmax_px = DiffractionModel.max_radius_px(det_w, det_h, cx, cy)
         rmax_mm = rmax_px * pix
         two_theta_max = math.degrees(math.atan2(rmax_mm, D)) if D > 0 else 0.0
-        theta_max = math.radians(two_theta_max / 2.0)
-        lam_nm = wl * 0.1
-        q_max_det = (4.0 * math.pi * math.sin(theta_max)) / lam_nm if lam_nm > 0 else 0.0
+        q_max_det = DiffractionModel.detector_qmax_nm(
+            det_w, det_h, cx, cy, D, pix, wl,
+        )
 
         return (
             f"E={E:.3g} keV,  lambda={wl:.4g} A\n"

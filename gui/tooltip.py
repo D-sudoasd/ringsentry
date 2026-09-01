@@ -17,6 +17,7 @@ class ToolTip:
         self.widget.bind("<Leave>", self.hide_tip, add="+")
         self.widget.bind("<FocusIn>", self.show_tip, add="+")
         self.widget.bind("<FocusOut>", self.hide_tip, add="+")
+        self.widget.bind("<Escape>", self.hide_tip, add="+")
 
     def show_tip(self, event=None):
         if not self.text:

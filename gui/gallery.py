@@ -212,7 +212,15 @@ def show_gallery(app):
         frame.grid(row=row_idx, column=col_idx, padx=2, pady=2, sticky="nsew")
 
         if thumb_data is None:
-            ttk.Label(frame, text="\u52A0\u8F7D\u5931\u8D25", font=("", 8)).pack()
+            fail_label = ttk.Label(frame, text="\u52A0\u8F7D\u5931\u8D25", font=("", 8))
+            fail_label.pack()
+            name = file_path.name
+            if len(name) > 14:
+                name = name[:11] + "..."
+            name_label = ttk.Label(frame, text=name, font=("Consolas", 7))
+            name_label.pack()
+            _bind_preview_activation(fail_label, app, file_path)
+            _bind_preview_activation(name_label, app, file_path)
             return
 
         display_width, display_height = _thumbnail_dimensions(

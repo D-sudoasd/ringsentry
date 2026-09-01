@@ -1,5 +1,7 @@
 """Worker function for threaded batch processing."""
 
+from pathlib import Path
+
 import numpy as np
 
 from .quality import analyze_image_quality, quality_summary_line
@@ -11,9 +13,24 @@ from .utils import summarize_array_stats
 from .output_safety import (
     canonical_output_path,
     ensure_output_directory,
+    path_aliases_existing_source,
     release_output_reservation,
     worker_output_path,
 )
+
+
+def _batch_source_paths(file_path, output_plan):
+    """Current source plus any sources recorded in a batch output plan."""
+    paths = [Path(file_path)]
+    if output_plan is None:
+        return paths
+    items = getattr(output_plan, "items", None)
+    if not callable(items):
+        return paths
+    for key, _planned in items():
+        if isinstance(key, (tuple, list)) and key:
+            paths.append(Path(key[0]))
+    return paths
 
 
 def _processing_risk_logs(file_name: str, arr, proc_opts: dict) -> list:
@@ -184,6 +201,17 @@ def process_one_file(args):
                     f"INFO: {file_path.name} [{fmt}] output name "
                     f"disambiguated -> {out_path.name}"
                 )
+            aliased = path_aliases_existing_source(
+                out_path,
+                _batch_source_paths(file_path, output_plan),
+            )
+            if aliased is not None:
+                logs.append(
+                    f"FAILED: {file_path.name} [{fmt}] -> output path "
+                    f"equals input path ({aliased}); "
+                    "refusing to overwrite a detector source"
+                )
+                continue
             if out_path.exists() and not overwrite:
                 logs.append(
                     f"SKIPPED: {file_path.name} [{fmt}] -> \u8F93\u51FA\u5DF2\u5B58\u5728"

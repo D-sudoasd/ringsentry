@@ -32,6 +32,10 @@ import fabio
 import numpy as np
 
 from core.constants import APP_VERSION as RINGSENTRY_APP_VERSION
+try:
+    from core.output_safety import is_reparse_point
+except ImportError:
+    from core.output_safety import _is_reparse_point as is_reparse_point
 
 
 SOFTWARE_NAME = "RingSentry"
@@ -650,17 +654,8 @@ def is_relative_to(path: Path, parent: Path) -> bool:
 
 
 def is_windows_reparse_point(path: Path) -> bool:
-    """Return whether an existing path is a Windows reparse point.
-
-    ``Path.is_symlink`` did not identify directory junctions on all supported
-    Python versions.  The file-attribute check keeps the guard compatible with
-    Python 3.8 while remaining a no-op on other platforms.
-    """
-    try:
-        attributes = getattr(Path(path).lstat(), "st_file_attributes", 0)
-    except OSError:
-        return False
-    return bool(attributes & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+    """Return whether a path is a symlink, junction, or Windows reparse point."""
+    return is_reparse_point(path)
 
 
 def path_has_link_or_reparse_component(path: Path, root: Path) -> bool:
@@ -3318,27 +3313,3 @@ def auto_overexposure_repair(root: Path, base_cfg: ProcessConfig,
             "original_cleanup_summary_path": str(cleanup_summary_path),
         })
     return auto_results, summary_path
-
-
-def verify_original_repaired_pair(original_path: Path, repaired_path: Path, zero_value: int = 0, replacement_value: int = 32766) -> dict:
-    _, original = read_image_data(original_path)
-    _, repaired = read_image_data(repaired_path)
-    if original.shape != repaired.shape:
-        return {"pass": False, "reason": "shape_mismatch", "original_shape": str(tuple(original.shape)), "repaired_shape": str(tuple(repaired.shape))}
-    target = original == zero_value
-    non_target = ~target
-    non_target_diff = int(np.count_nonzero(original[non_target] != repaired[non_target]))
-    target_bad = int(np.count_nonzero(repaired[target] != replacement_value))
-    return {
-        "pass": non_target_diff == 0 and target_bad == 0,
-        "reason": "ok" if non_target_diff == 0 and target_bad == 0 else "pixel_validation_failed",
-        "target_pixels": int(np.count_nonzero(target)),
-        "non_target_diff": non_target_diff,
-        "target_bad": target_bad,
-        "original_dtype": str(original.dtype),
-        "repaired_dtype": str(repaired.dtype),
-        "original_shape": str(tuple(original.shape)),
-        "repaired_shape": str(tuple(repaired.shape)),
-        "original_sha256": sha256_file(original_path),
-        "repaired_sha256": sha256_file(repaired_path),
-    }

@@ -23,12 +23,17 @@ from gui.tabs.overexposure_tab import OverexposureRepairTab
 from gui.tabs.q_calculator_tab import QCalculatorTab
 from gui.log_panel import LogPanel
 from gui.preview import show_preview
-from core.constants import APP_TITLE, APP_VERSION, CONFIG_FILE, DEFAULT_H5_PATH
+from core.constants import (
+    APP_TITLE,
+    APP_VERSION,
+    CONFIG_FILE,
+    DEFAULT_H5_PATH,
+    HDF5_SUFFIXES,
+)
 from core.utils import parse_roi_text, parse_optional_float
 from core.loader import (
     load_image,
     load_image_with_info,
-    sniff_file_kind,
     find_files_recursive,
     build_filelist_from_selected_paths,
 )
@@ -79,6 +84,7 @@ class App(tk.Tk):
         self._close_poll_after_id = None
         self._close_requested = False
         self.is_running = False
+        self._preflight_running = False
         self._pending_ui_after_ids = set()
         self._ui_callback_lock = threading.Lock()
         self._destroying = False
@@ -352,8 +358,96 @@ class App(tk.Tk):
             p.max_intensity_var.set("")
 
         self.log(f"\u5DF2\u5E94\u7528\u5DE5\u4F5C\u6D41\u9884\u8BBE: {preset}")
+        self.io_tab.workflow_preset_var.set("Custom")
 
     # --- Preflight Checks ---
+    @staticmethod
+    def _hdf5_files_by_suffix(filelist):
+        """Identify HDF5 inputs by suffix instead of sniffing every file."""
+        h5_files = []
+        for fp, _ in filelist:
+            try:
+                suffix = Path(fp).suffix.lower()
+            except Exception:
+                continue
+            if suffix in HDF5_SUFFIXES:
+                h5_files.append(fp)
+        return h5_files
+
+    def _collect_preflight_sample_qc(
+        self,
+        sample_entries,
+        h5_path,
+        formats,
+        roi,
+        bin_factor,
+        rotate_deg,
+        filelist,
+        sample_count,
+    ):
+        """Load sample images and run QC. Safe to call off the Tk thread."""
+        errors = []
+        warnings = []
+        reports = []
+        sample_infos = []
+        shape_to_files = {}
+        for sample_file, _ in sample_entries:
+            try:
+                loaded = load_image_with_info(sample_file, h5_path)
+                sample_img = loaded["data"]
+                report = analyze_image_quality(
+                    sample_img,
+                    metadata=loaded["metadata"],
+                    source_name=sample_file.name,
+                )
+                report.findings.extend(
+                    assess_processing_plan(
+                        report,
+                        formats=formats,
+                        roi=roi,
+                        bin_factor=bin_factor,
+                        rotate_deg=rotate_deg,
+                    )
+                )
+                report.review_required = any(
+                    item.level in {"WARNING", "ERROR"}
+                    for item in report.findings
+                )
+                reports.append(report)
+                sample_infos.append((sample_file, sample_img, report))
+                shape_to_files.setdefault(sample_img.shape, []).append(
+                    sample_file.name
+                )
+                for finding in report.findings:
+                    text = (
+                        f"{sample_file.name}: {finding.message} "
+                        f"({finding.basis})"
+                    )
+                    if finding.level == "ERROR":
+                        errors.append(text)
+                    elif finding.level == "WARNING":
+                        warnings.append(text)
+            except Exception as e:
+                errors.append(
+                    f"\u65E0\u6CD5\u8BFB\u53D6\u62BD\u6837\u6587\u4EF6 {sample_file.name}: {e}"
+                )
+
+        for h5_file in App._hdf5_files_by_suffix(filelist)[:sample_count]:
+            try:
+                _ = load_image_with_info(h5_file, h5_path)
+            except Exception as e:
+                errors.append(
+                    f"HDF5 \u8DEF\u5F84\u68C0\u67E5\u5931\u8D25 {h5_file.name}: {e}"
+                )
+
+        return {
+            "errors": errors,
+            "warnings": warnings,
+            "reports": reports,
+            "sample_infos": sample_infos,
+            "shape_to_files": shape_to_files,
+        }
+
     def _run_preflight_checks(
         self,
         outroot,
@@ -363,6 +457,7 @@ class App(tk.Tk):
         min_intensity,
         max_intensity,
         output_plan=None,
+        sample_qc=None,
     ):
         errors = []
         warnings = []
@@ -403,8 +498,6 @@ class App(tk.Tk):
                     f"\u62BD\u67E5\u8BA1\u6570={existing_outputs}\u3002"
                 )
 
-        sample_infos = []
-        shape_to_files = {}
         sample_var = getattr(
             getattr(self, "quality_tab", None), "sample_count_var", None
         )
@@ -413,64 +506,26 @@ class App(tk.Tk):
             requested_samples, len(self.filelist)
         )
         sample_entries = self.filelist[:sample_count]
-        for sample_file, _ in sample_entries:
-            try:
-                loaded = load_image_with_info(
-                    sample_file, self.io_tab.h5_path_var.get()
-                )
-                sample_img = loaded["data"]
-                report = analyze_image_quality(
-                    sample_img,
-                    metadata=loaded["metadata"],
-                    source_name=sample_file.name,
-                )
-                report.findings.extend(
-                    assess_processing_plan(
-                        report,
-                        formats=formats,
-                        roi=roi,
-                        bin_factor=bin_factor,
-                        rotate_deg=self.geometry_tab.rotate_var.get(),
-                    )
-                )
-                report.review_required = any(
-                    item.level in {"WARNING", "ERROR"}
-                    for item in report.findings
-                )
-                self.last_quality_reports.append(report)
-                sample_infos.append((sample_file, sample_img, report))
-                shape_to_files.setdefault(sample_img.shape, []).append(
-                    sample_file.name
-                )
-                for finding in report.findings:
-                    text = (
-                        f"{sample_file.name}: {finding.message} "
-                        f"({finding.basis})"
-                    )
-                    if finding.level == "ERROR":
-                        errors.append(text)
-                    elif finding.level == "WARNING":
-                        warnings.append(text)
-            except Exception as e:
-                errors.append(
-                    f"\u65E0\u6CD5\u8BFB\u53D6\u62BD\u6837\u6587\u4EF6 {sample_file.name}: {e}"
-                )
-
-        # HDF5 check
-        h5_files = []
-        for fp, _ in self.filelist:
-            try:
-                if sniff_file_kind(fp) == "hdf5":
-                    h5_files.append(fp)
-            except Exception:
-                continue
-        for h5_file in h5_files[:sample_count]:
-            try:
-                _ = load_image_with_info(h5_file, self.io_tab.h5_path_var.get())
-            except Exception as e:
-                errors.append(
-                    f"HDF5 \u8DEF\u5F84\u68C0\u67E5\u5931\u8D25 {h5_file.name}: {e}"
-                )
+        if sample_qc is None:
+            collect = getattr(self, "_collect_preflight_sample_qc", None)
+            if not callable(collect):
+                def collect(**kwargs):
+                    return App._collect_preflight_sample_qc(self, **kwargs)
+            sample_qc = collect(
+                sample_entries=sample_entries,
+                h5_path=self.io_tab.h5_path_var.get(),
+                formats=formats,
+                roi=roi,
+                bin_factor=bin_factor,
+                rotate_deg=self.geometry_tab.rotate_var.get(),
+                filelist=self.filelist,
+                sample_count=sample_count,
+            )
+        errors.extend(sample_qc.get("errors") or [])
+        warnings.extend(sample_qc.get("warnings") or [])
+        self.last_quality_reports = list(sample_qc.get("reports") or [])
+        sample_infos = list(sample_qc.get("sample_infos") or [])
+        shape_to_files = dict(sample_qc.get("shape_to_files") or {})
 
         if len(shape_to_files) > 1:
             shape_text = ", ".join(
@@ -577,6 +632,7 @@ class App(tk.Tk):
                     self.log_panel.count_btn,
                     self.log_panel.cancel_btn,
                     self.q_calc_tab,  # Q Calculator stays active during processing
+                    getattr(self, "overexposure_tab", None),
                 ):
                     continue
                 if isinstance(child, control_types):
@@ -599,19 +655,70 @@ class App(tk.Tk):
             self.processing_tab.dark_entry.config(state='readonly')
             self.processing_tab.flat_entry.config(state='readonly')
             self.processing_tab.mask_entry.config(state='readonly')
+            self.io_tab.files_entry.config(state='readonly')
             self.io_tab.workflow_preset_cb.config(state='readonly')
             self.geometry_tab.rotate_cb.config(state='readonly')
             self.geometry_tab.norm_cb.config(state='readonly')
             self.geometry_tab.transform_cb.config(state='readonly')
             self.output_tab.xy_y_axis_origin_cb.config(state='readonly')
             self.output_tab.png_scale_cb.config(state='readonly')
+            self.output_tab._sync_png_controls()
 
     # --- Conversion ---
+    def _set_preflight_busy(self, busy):
+        """Disable Run and show a watch cursor while preflight work is in flight."""
+        try:
+            self.config(cursor="watch" if busy else "")
+        except (AttributeError, tk.TclError, RuntimeError):
+            pass
+        run_btn = getattr(getattr(self, "log_panel", None), "run_btn", None)
+        if run_btn is None:
+            return
+        try:
+            run_btn.config(state="disabled" if busy else "normal")
+        except (AttributeError, tk.TclError, RuntimeError):
+            pass
+
+    def _overexposure_is_active(self):
+        worker = getattr(getattr(self, "overexposure_tab", None), "worker", None)
+        if worker is None:
+            return False
+        is_alive = getattr(worker, "is_alive", None)
+        return bool(callable(is_alive) and is_alive())
+
+    def _conversion_is_active(self):
+        coordinator = getattr(self, "_conversion_thread", None)
+        coordinator_alive = bool(
+            coordinator is not None
+            and getattr(coordinator, "is_alive", lambda: False)()
+        )
+        return bool(
+            getattr(self, "is_running", False)
+            or getattr(self, "thread_pool", None) is not None
+            or coordinator_alive
+        )
+
     def run_conversion(self):
-        if self.is_running:
+        if self.is_running or getattr(self, "_preflight_running", False):
             return messagebox.showwarning(
                 "正在运行",
                 "当前批处理尚未结束，请等待完成或先取消当前任务。",
+            )
+        overexposure_check = getattr(self, "_overexposure_is_active", None)
+        if callable(overexposure_check):
+            overexposure_busy = bool(overexposure_check())
+        else:
+            worker = getattr(
+                getattr(self, "overexposure_tab", None), "worker", None
+            )
+            overexposure_busy = bool(
+                worker is not None
+                and getattr(worker, "is_alive", lambda: False)()
+            )
+        if overexposure_busy:
+            return messagebox.showwarning(
+                "正在运行",
+                "CBF 过曝修复或扫描仍在运行，请等待完成或先停止该任务。",
             )
 
         # Apply workflow preset if selected
@@ -753,13 +860,114 @@ class App(tk.Tk):
         }
 
         output_plan = plan_output_paths(self.filelist, outroot, formats)
-        if not self._run_preflight_checks(
-            outroot=outroot, formats=formats, roi=roi,
-            bin_factor=bin_factor, min_intensity=min_i,
-            max_intensity=max_i, output_plan=output_plan,
-        ):
+        preflight_kwargs = {
+            "outroot": outroot,
+            "formats": formats,
+            "roi": roi,
+            "bin_factor": bin_factor,
+            "min_intensity": min_i,
+            "max_intensity": max_i,
+            "output_plan": output_plan,
+        }
+        launch_kwargs = {
+            "root": root,
+            "outroot": outroot,
+            "formats": formats,
+            "xy_opts": xy_opts,
+            "png_opts": png_opts,
+            "proc_opts": proc_opts,
+            "output_plan": output_plan,
+            "max_workers": max_workers,
+        }
+
+        def finish_preflight(sample_qc=None):
+            try:
+                ok = self._run_preflight_checks(
+                    sample_qc=sample_qc, **preflight_kwargs
+                )
+            except Exception:
+                self._preflight_running = False
+                set_busy = getattr(self, "_set_preflight_busy", None)
+                if callable(set_busy):
+                    set_busy(False)
+                raise
+            if not ok:
+                self._preflight_running = False
+                set_busy = getattr(self, "_set_preflight_busy", None)
+                if callable(set_busy):
+                    set_busy(False)
+                return
+            self._preflight_running = False
+            try:
+                self.config(cursor="")
+            except (AttributeError, tk.TclError, RuntimeError):
+                pass
+            starter = getattr(self, "_start_conversion_from_preflight", None)
+            if callable(starter):
+                starter(**launch_kwargs)
+            else:
+                App._start_conversion_from_preflight(self, **launch_kwargs)
+
+        if getattr(self, "_mainloop_active", False):
+            self._preflight_running = True
+            set_busy = getattr(self, "_set_preflight_busy", None)
+            if callable(set_busy):
+                set_busy(True)
+            sample_var = getattr(
+                getattr(self, "quality_tab", None), "sample_count_var", None
+            )
+            requested_samples = (
+                sample_var.get() if sample_var is not None else len(self.filelist)
+            )
+            sample_count = normalize_preflight_sample_count(
+                requested_samples, len(self.filelist)
+            )
+            snapshot = {
+                "sample_entries": list(self.filelist[:sample_count]),
+                "h5_path": self.io_tab.h5_path_var.get(),
+                "formats": list(formats),
+                "roi": roi,
+                "bin_factor": bin_factor,
+                "rotate_deg": self.geometry_tab.rotate_var.get(),
+                "filelist": list(self.filelist),
+                "sample_count": sample_count,
+            }
+
+            def worker():
+                try:
+                    sample_qc = self._collect_preflight_sample_qc(**snapshot)
+                except Exception as exc:
+                    sample_qc = {
+                        "errors": [str(exc)],
+                        "warnings": [],
+                        "reports": [],
+                        "sample_infos": [],
+                        "shape_to_files": {},
+                    }
+                self._schedule_ui_callback(
+                    lambda qc=sample_qc: finish_preflight(qc)
+                )
+
+            threading.Thread(
+                target=worker,
+                daemon=True,
+                name="ringsentry-preflight-qc",
+            ).start()
             return
 
+        finish_preflight()
+
+    def _start_conversion_from_preflight(
+        self,
+        root,
+        outroot,
+        formats,
+        xy_opts,
+        png_opts,
+        proc_opts,
+        output_plan,
+        max_workers,
+    ):
         args_list = [
             (
                 fp, rp, root, outroot, formats,
@@ -1111,7 +1319,17 @@ class App(tk.Tk):
             coordinator is not None
             and getattr(coordinator, "is_alive", lambda: False)()
         )
-        return bool(self.is_running or self.thread_pool is not None or coordinator_alive)
+        conversion_active = bool(
+            getattr(self, "is_running", False)
+            or getattr(self, "thread_pool", None) is not None
+            or coordinator_alive
+        )
+        worker = getattr(getattr(self, "overexposure_tab", None), "worker", None)
+        overexposure_alive = bool(
+            worker is not None
+            and getattr(worker, "is_alive", lambda: False)()
+        )
+        return bool(conversion_active or overexposure_alive)
 
     def _wait_for_batch_close(self):
         """Poll until batch workers finish, then save settings and destroy Tk."""
@@ -1142,7 +1360,17 @@ class App(tk.Tk):
 
     def cancel_conversion(self):
         """Cancel the ongoing conversion."""
-        if not self._batch_is_active():
+        coordinator = getattr(self, "_conversion_thread", None)
+        coordinator_alive = bool(
+            coordinator is not None
+            and getattr(coordinator, "is_alive", lambda: False)()
+        )
+        conversion_active = bool(
+            getattr(self, "is_running", False)
+            or getattr(self, "thread_pool", None) is not None
+            or coordinator_alive
+        )
+        if not conversion_active:
             return
         self.log("!!! \u8BF7\u6C42\u53D6\u6D88\uFF0C\u6B63\u5728\u7B49\u5F85\u5F53\u524D\u4EFB\u52A1\u5B8C\u6210... !!!")
         self.cancellation_event.set()
@@ -1303,21 +1531,24 @@ class App(tk.Tk):
         except Exception as e:
             self.log(f"\u65E0\u6CD5\u52A0\u8F7D\u914D\u7F6E: {e}")
 
+    def _report_config_save_error(self, exc):
+        try:
+            self.log(f"保存配置错误: {exc}")
+        except Exception:
+            print(f"保存配置错误: {exc}")
+        try:
+            messagebox.showerror(
+                "保存配置失败",
+                f"无法保存 config.json。\n\n{exc}",
+            )
+        except Exception:
+            pass
+
     def _save_config(self):
         try:
             self._save_config_impl()
         except Exception as e:
-            try:
-                self.log(f"保存配置错误: {e}")
-            except Exception:
-                print(f"保存配置错误: {e}")
-            try:
-                messagebox.showerror(
-                    "保存配置失败",
-                    f"无法保存 config.json。\n\n{e}",
-                )
-            except Exception:
-                pass
+            self._report_config_save_error(e)
 
     def _save_config_impl(self):
         io = self.io_tab
@@ -1411,21 +1642,26 @@ class App(tk.Tk):
             config[key] = value
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
-        except Exception:
-            pass
+        except Exception as e:
+            self._report_config_save_error(e)
+            raise
 
     def _on_close(self):
         overexposure_worker = getattr(
             getattr(self, "overexposure_tab", None), "worker", None
         )
         if overexposure_worker is not None and overexposure_worker.is_alive():
+            if getattr(self, "_close_requested", False):
+                return
             if messagebox.askyesno(
                 "退出",
                 "CBF 修复或扫描仍在运行。是否请求安全停止？\n\n"
                 "为避免写坏文件，当前文件会先完成写入和读回校验；"
                 "窗口将在任务停止后才能关闭。",
             ):
+                self._close_requested = True
                 self.overexposure_tab.stop()
+                self._wait_for_batch_close()
             return
         if self._batch_is_active():
             if self._close_requested:

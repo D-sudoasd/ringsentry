@@ -144,13 +144,16 @@ class AccessibilityStylesTests(unittest.TestCase):
         ):
             tooltip = ToolTip(widget, "help")
             self.assertEqual(
-                {"<Enter>", "<Leave>", "<FocusIn>", "<FocusOut>"},
+                {"<Enter>", "<Leave>", "<FocusIn>", "<FocusOut>", "<Escape>"},
                 set(widget.bindings),
             )
             tooltip.show_tip()
             tooltip.show_tip()
             self.assertEqual(1, len(_FakeTipWindow.instances))
             tooltip.hide_tip()
+            self.assertIsNone(tooltip.tip_window)
+            tooltip.show_tip()
+            widget.bindings["<Escape>"][0]()
             self.assertIsNone(tooltip.tip_window)
 
     def test_scrollable_frame_handles_wheel_keys_and_focus(self):
@@ -188,8 +191,35 @@ class AccessibilityStylesTests(unittest.TestCase):
         frame._on_keypress(SimpleNamespace(widget=frame.body, keysym="End"))
         self.assertEqual(1, frame.canvas.move_calls[-1])
 
+        entry = _FakeWidget(path=".frame.body.entry")
+        entry.winfo_class = lambda: "TEntry"
+        before = len(frame.canvas.scroll_calls)
+        self.assertIsNone(
+            frame._on_keypress(SimpleNamespace(widget=entry, keysym="PageDown"))
+        )
+        self.assertEqual(len(frame.canvas.scroll_calls), before)
+
         frame._on_focus_in(SimpleNamespace(widget=child))
         self.assertTrue(frame.canvas.move_calls[-1] > 0)
+
+    def test_accent_button_keeps_theme_label_when_sv_ttk_applied(self):
+        import tkinter as tk
+        from tkinter import ttk
+        from gui.styles import configure_styles
+
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk display is unavailable: {exc}")
+
+        try:
+            root._ringsentry_sv_ttk = True
+            configure_styles(root)
+            accent = ttk.Style(root).configure("Accent.TButton") or {}
+            self.assertNotEqual(accent.get("foreground"), "#1769aa")
+        finally:
+            root.destroy()
 
 
 if __name__ == "__main__":

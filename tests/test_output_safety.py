@@ -9,11 +9,15 @@ import tifffile
 from core.edf_io import write_edf
 from core.output_safety import (
     UnsafeOutputPathError,
+    _is_reparse_point,
     ensure_output_directory,
+    is_reparse_point,
+    path_aliases_existing_source,
     plan_output_paths,
     release_output_reservation,
     reserve_output_path,
 )
+from core.processing import apply_processing
 from core import worker as worker_module
 from core.worker import process_one_file
 from core.writer import save_array
@@ -333,6 +337,97 @@ class WorkerOutputSafetyTests(unittest.TestCase):
             self.assertTrue(
                 (output_root / "npy" / "sample__tif.npy").exists()
             )
+
+    def test_planned_tif_conversion_does_not_overwrite_another_batch_source(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            data = tmp / "data"
+            nested = data / "tif"
+            nested.mkdir(parents=True)
+            first = data / "x.tif"
+            second = nested / "x.tif"
+            first_arr = np.array([[1, 2], [3, 4]], dtype=np.uint16)
+            second_arr = np.array([[9, 8], [7, 6]], dtype=np.uint16)
+            tifffile.imwrite(first, first_arr)
+            tifffile.imwrite(second, second_arr)
+            second_bytes = second.read_bytes()
+
+            entries = [
+                (first, Path("x.tif")),
+                (second, Path("tif") / "x.tif"),
+            ]
+            plan = plan_output_paths(entries, data, ["tif"])
+            planned = plan.path_for(first, "tif")
+            self.assertEqual(planned.resolve(), second.resolve())
+            aliased = path_aliases_existing_source(planned, [first, second])
+            self.assertEqual(aliased.resolve(), second.resolve())
+
+            logs = process_one_file(
+                (
+                    first,
+                    Path("x.tif"),
+                    data,
+                    data,
+                    ["tif"],
+                    self._xy_options(),
+                    {},
+                    "/entry/data/data",
+                    self._processing_options(),
+                    threading.Event(),
+                    True,
+                    plan,
+                )
+            )
+            self.assertTrue(
+                any(line.startswith("FAILED:") for line in logs),
+                logs,
+            )
+            self.assertTrue(
+                any("equals input path" in line for line in logs),
+                logs,
+            )
+            self.assertEqual(second.read_bytes(), second_bytes)
+            np.testing.assert_array_equal(tifffile.imread(second), second_arr)
+
+    def test_lossless_matrix_with_bg_offset_exports_processed_npy(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            source = tmp / "sample.tif"
+            output_root = tmp / "out"
+            raw = np.array([[10, 20], [30, 40]], dtype=np.uint16)
+            tifffile.imwrite(source, raw)
+            proc_opts = dict(self._processing_options())
+            proc_opts["bg_offset"] = 5.0
+
+            logs = process_one_file(
+                (
+                    source,
+                    Path(source.name),
+                    source.parent,
+                    output_root,
+                    ["npy"],
+                    self._xy_options(),
+                    "/entry/data/data",
+                    proc_opts,
+                    threading.Event(),
+                    True,
+                )
+            )
+            self.assertTrue(any("[npy/PROC]" in line for line in logs), logs)
+            loaded = np.load(output_root / "npy" / "sample.npy")
+            expected = apply_processing(raw, bg_offset=5.0)
+            np.testing.assert_array_equal(loaded, expected)
+            self.assertFalse(np.array_equal(loaded, raw))
+
+
+class ReparsePointAliasTests(unittest.TestCase):
+    def test_public_is_reparse_point_keeps_private_alias(self):
+        self.assertIs(is_reparse_point, _is_reparse_point)
+
 
 class AtomicWriterFailureTests(unittest.TestCase):
     def test_failed_write_preserves_existing_output_and_cleans_temp(self):

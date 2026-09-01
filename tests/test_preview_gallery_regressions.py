@@ -292,7 +292,9 @@ class PreviewGalleryRegressionTests(unittest.TestCase):
             first_poll()
             second_poll()
 
-        self.assertEqual([label.text for label in labels].count("加载失败"), 1)
+        label_texts = [label.text for label in labels]
+        self.assertEqual(label_texts.count("加载失败"), 1)
+        self.assertIn("old.cbf", label_texts)
 
 
 if __name__ == "__main__":

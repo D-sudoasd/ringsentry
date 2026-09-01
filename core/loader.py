@@ -14,6 +14,7 @@ from .constants import (
     SUPPORTED_FORMATS,
     DEFAULT_H5_PATH,
 )
+from .output_safety import _path_is_within, is_reparse_point
 from .utils import is_numeric_frame_suffix
 
 
@@ -267,20 +268,43 @@ def load_image(file: Path, h5_path: str = DEFAULT_H5_PATH):
 
 # --- File discovery ---
 
-def find_files_recursive(root, exts=SUPPORTED_FORMATS, exclude_dirs=()):
-    """Recursively find detector image files, including numeric suffix frames."""
+def find_files_recursive(root, exclude_dirs=()):
+    """Recursively find detector image files, including numeric suffix frames.
+
+    Symbolic links, NTFS junctions, and other reparse points are not followed.
+    Files whose resolved path escapes ``root`` are skipped.
+    """
     root = Path(root).resolve()
     exclude = {str(Path(d).resolve()) for d in exclude_dirs if d}
     result = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if str(Path(dirpath, d).resolve()) not in exclude
-            and d not in ("_converted",)
-        ]
+        kept = []
+        for name in dirnames:
+            if name == "_converted":
+                continue
+            child = Path(dirpath, name)
+            if is_reparse_point(child):
+                continue
+            try:
+                resolved_child = child.resolve()
+            except OSError:
+                continue
+            if str(resolved_child) in exclude:
+                continue
+            if not _path_is_within(resolved_child, root):
+                continue
+            kept.append(name)
+        dirnames[:] = kept
         for f in filenames:
             file_path = Path(dirpath) / f
+            if is_reparse_point(file_path):
+                continue
+            try:
+                resolved_file = file_path.resolve()
+            except OSError:
+                continue
+            if not _path_is_within(resolved_file, root):
+                continue
             if is_supported_input_file(file_path):
                 rel_path = file_path.relative_to(root)
                 result.append((file_path, rel_path))

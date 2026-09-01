@@ -1,9 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
-from core.processing import apply_processing
-from core.utils import rebin_mean_2d
+from core.processing import apply_processing, processing_is_identity
 
 
 class ProcessingPipelineTests(unittest.TestCase):
@@ -118,8 +118,7 @@ class ProcessingPipelineTests(unittest.TestCase):
             bin_factor=2,
         )
 
-        expected_pre_bin = np.fliplr(np.rot90(raw, k=1))
-        expected = rebin_mean_2d(expected_pre_bin, 2)
+        expected = np.array([[12.5, 4.5], [10.5, 2.5]], dtype=np.float32)
         self.assertTrue(np.array_equal(out, expected))
 
     def test_invalid_shapes_and_parameters_raise(self):
@@ -135,6 +134,45 @@ class ProcessingPipelineTests(unittest.TestCase):
             apply_processing(raw, gamma=0)
         with self.assertRaises(ValueError):
             apply_processing(raw, rotate_deg="45")
+
+    def test_processing_is_identity_empty_and_mutating_keys(self):
+        self.assertTrue(processing_is_identity({}))
+
+        mutating = (
+            ("dark_frame", object()),
+            ("flat_frame", object()),
+            ("roi", (0, 0, 1, 1)),
+            ("mask_frame", object()),
+            ("clip_negative", True),
+            ("bg_offset", 1.0),
+            ("min_intensity", 0.0),
+            ("max_intensity", 1.0),
+            ("rotate_deg", "90"),
+            ("flip_x", True),
+            ("flip_y", True),
+            ("bin_factor", 2),
+            ("pclip_low", 0.0),
+            ("pclip_high", 100.0),
+            ("intensity_transform", "sqrt"),
+            ("gamma", 2.0),
+            ("norm_mode", "minmax"),
+            ("hot_pixel_enable", True),
+        )
+        for key, value in mutating:
+            with self.subTest(key=key):
+                self.assertFalse(processing_is_identity({key: value}))
+
+    def test_hot_pixel_memory_error_is_raised(self):
+        raw = np.ones((5, 5), dtype=np.float32)
+        raw[2, 2] = 100.0
+
+        with patch.object(
+            np.lib.stride_tricks,
+            "sliding_window_view",
+            side_effect=MemoryError,
+        ):
+            with self.assertRaises(MemoryError):
+                apply_processing(raw, hot_pixel_enable=True)
 
 
 if __name__ == "__main__":

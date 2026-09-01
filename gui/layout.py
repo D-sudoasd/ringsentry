@@ -80,6 +80,29 @@ class ScrollableFrame(ttk.Frame):
         self._unbind_top_level_events()
         return None
 
+    @staticmethod
+    def _is_text_entry_widget(widget):
+        """Return whether keypress should stay with a text-entry control."""
+        if widget is None:
+            return False
+        if isinstance(
+            widget, (tk.Entry, tk.Spinbox, tk.Text, ttk.Entry, ttk.Combobox, ttk.Spinbox)
+        ):
+            return True
+        try:
+            widget_class = str(widget.winfo_class())
+        except (AttributeError, tk.TclError):
+            widget_class = type(widget).__name__
+        return widget_class in {
+            "Entry",
+            "TEntry",
+            "Combobox",
+            "TCombobox",
+            "Spinbox",
+            "TSpinbox",
+            "Text",
+        }
+
     def _is_scrollable_widget(self, widget):
         """Return whether ``widget`` is this frame or one of its children."""
         if widget is None:
@@ -152,6 +175,8 @@ class ScrollableFrame(ttk.Frame):
             except tk.TclError:
                 widget = None
         if not self._is_scrollable_widget(widget):
+            return None
+        if self._is_text_entry_widget(widget):
             return None
 
         key = str(getattr(event, "keysym", "")).lower()

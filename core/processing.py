@@ -70,16 +70,11 @@ def _hot_pixel_replace(
         mad = np.nanmedian(
             np.abs(sw - med[..., None, None]), axis=(-2, -1)
         )
-    except Exception:
-        h_img, w_img = a.shape
-        med = np.empty_like(a, dtype=np.float32)
-        mad = np.empty_like(a, dtype=np.float32)
-        for yy in range(h_img):
-            for xx in range(w_img):
-                blk = ap[yy:yy + w, xx:xx + w]
-                m = np.nanmedian(blk)
-                med[yy, xx] = m
-                mad[yy, xx] = np.nanmedian(np.abs(blk - m))
+    except MemoryError:
+        logger.error(
+            "Hot pixel suppression failed: sliding-window view exceeded available memory"
+        )
+        raise
 
     threshold = med + sigma * 1.4826 * mad
     finite = np.isfinite(a) & np.isfinite(med) & np.isfinite(threshold)

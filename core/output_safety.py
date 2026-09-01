@@ -207,7 +207,7 @@ def plan_output_paths(
 plan_batch_outputs = plan_output_paths
 
 
-def _is_reparse_point(path: Path) -> bool:
+def is_reparse_point(path: Path) -> bool:
     """Return whether a path is a symlink, junction, or Windows reparse point."""
     try:
         if path.is_symlink():
@@ -230,6 +230,27 @@ def _is_reparse_point(path: Path) -> bool:
             return False
         return bool(attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT)
     return False
+
+
+_is_reparse_point = is_reparse_point
+
+
+def path_aliases_existing_source(
+    out_path: Path,
+    source_paths: Iterable,
+) -> Optional[Path]:
+    """Return a batch source whose resolved path equals ``out_path``.
+
+    Mirrors the overexposure identity check: a conversion must not overwrite
+    the current detector file or another input in the same batch, even when
+    overwrite is enabled.
+    """
+    out_key = _path_key(Path(out_path).expanduser())
+    for source in source_paths:
+        source = Path(source).expanduser()
+        if _path_key(source) == out_key:
+            return source
+    return None
 
 
 def _path_is_within(path: Path, root: Path) -> bool:
@@ -267,7 +288,7 @@ def ensure_output_directory(
 
     # Explicitly retain the reason in the error for a pre-existing link.  The
     # containment check above is the authority for both symlinks and junctions.
-    if _is_reparse_point(format_dir) and not _path_is_within(
+    if is_reparse_point(format_dir) and not _path_is_within(
         resolved_before, resolved_root
     ):
         raise UnsafeOutputPathError(

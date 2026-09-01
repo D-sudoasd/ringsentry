@@ -211,6 +211,66 @@ class GuiResilienceTests(unittest.TestCase):
         finally:
             app.destroy()
 
+    def test_conversion_ui_state_skips_overexposure_tab(self):
+        app = self._create_app()
+        try:
+            self.assertEqual(str(app.overexposure_tab.scan_btn.cget("state")), "normal")
+            app._set_ui_state(running=True)
+            self.assertEqual(str(app.overexposure_tab.scan_btn.cget("state")), "normal")
+
+            app.overexposure_tab.set_running(True)
+            app._set_ui_state(running=True)
+            self.assertEqual(str(app.overexposure_tab.stop_btn.cget("state")), "normal")
+        finally:
+            app.overexposure_tab.set_running(False)
+            app.destroy()
+
+    def test_overexposure_start_refuses_while_conversion_running(self):
+        app = self._create_app()
+        try:
+            app.is_running = True
+            app.overexposure_tab.start("scan")
+            self.assertTrue(
+                any("批处理" in m["message"] for m in self.messages),
+                self.messages,
+            )
+            self.assertIsNone(app.overexposure_tab.worker)
+        finally:
+            app.is_running = False
+            app.destroy()
+
+    def test_run_conversion_refuses_while_overexposure_worker_is_alive(self):
+        app = self._create_app()
+        try:
+            app.overexposure_tab.worker = type(
+                "ActiveWorker", (), {"is_alive": lambda _self: True}
+            )()
+            app.run_conversion()
+            self.assertTrue(
+                any("CBF" in m["message"] or "过曝" in m["message"] for m in self.messages),
+                self.messages,
+            )
+            self.assertFalse(app.is_running)
+        finally:
+            app.overexposure_tab.worker = None
+            app.destroy()
+
+    def test_update_config_value_reports_and_reraises(self):
+        app = self._create_app()
+        try:
+            with patch("gui.app.open", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    app._update_config_value("q_calc_custom_presets", {})
+            self.assertTrue(
+                any(
+                    m["kind"] == "error" and "config.json" in m["message"]
+                    for m in self.messages
+                ),
+                self.messages,
+            )
+        finally:
+            app.destroy()
+
     def test_close_requests_safe_stop_before_destroying_active_cbf_worker(self):
         app = self._create_app()
         try:
@@ -440,9 +500,9 @@ class GuiResilienceTests(unittest.TestCase):
         from core.processing import apply_processing
         from gui.preview import _preview_processing_arrays
 
-        arr = np.arange(1, 37, dtype=np.float32).reshape(6, 6)
+        arr = np.arange(1, 25, dtype=np.float32).reshape(4, 6)
         options = {
-            "roi": (1, 0, 4, 6),
+            "roi": (1, 0, 4, 4),
             "bg_offset": 2.0,
             "clip_negative": True,
             "pclip_low": 10.0,
@@ -457,10 +517,23 @@ class GuiResilienceTests(unittest.TestCase):
 
         coordinate, final = _preview_processing_arrays(arr, **options)
         expected = apply_processing(arr, **options)
+        expected_coordinate = apply_processing(
+            arr,
+            bg_offset=2.0,
+            clip_negative=True,
+            rotate_deg="0",
+            flip_x=False,
+            flip_y=False,
+            bin_factor=1,
+        )
 
         self.assertEqual(coordinate.shape, arr.shape)
+        self.assertNotEqual(
+            arr.shape, apply_processing(arr, rotate_deg="90").shape
+        )
+        np.testing.assert_array_equal(coordinate, expected_coordinate)
         np.testing.assert_array_equal(final, expected)
-        self.assertEqual(final.shape, (2, 3))
+        self.assertEqual(final.shape, (2, 2))
 
     def test_overexposure_numeric_validation_uses_field_labels(self):
         with tempfile.TemporaryDirectory(prefix="gui_zero2sat_bad_input_") as tmp:

@@ -76,12 +76,12 @@ class IOTab(ttk.Frame):
         files_frame.columnconfigure(0, weight=1)
 
         self.selected_files_var = tk.StringVar(value="\u65E0")
-        files_entry = ttk.Entry(
+        self.files_entry = ttk.Entry(
             files_frame, textvariable=self.selected_files_var, state='readonly',
             font=("Consolas", 9),
         )
-        files_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
-        ToolTip(files_entry, "\u663E\u793A\u5F53\u524D\u5DF2\u9009\u4E2D\u7684\u5177\u4F53\u6587\u4EF6")
+        self.files_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        ToolTip(self.files_entry, "\u663E\u793A\u5F53\u524D\u5DF2\u9009\u4E2D\u7684\u5177\u4F53\u6587\u4EF6")
 
         btn_frame = ttk.Frame(files_frame)
         btn_frame.grid(row=0, column=1)
@@ -240,6 +240,8 @@ class IOTab(ttk.Frame):
         except Exception as exc:
             self.app.log(f"\u5DE5\u4F5C\u6D41\u9884\u8BBE\u5E94\u7528\u5931\u8D25 ({preset}): {exc}")
             return
+        if preset != "Custom":
+            self.workflow_preset_var.set("Custom")
         self.app.log(
             f"\u5DE5\u4F5C\u6D41\u9884\u8BBE\u5DF2\u5373\u65F6\u5E94\u7528: {preset}\uFF1B\u76F8\u5173\u53C2\u6570\u5DF2\u540C\u6B65\u3002"
         )

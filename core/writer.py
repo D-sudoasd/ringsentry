@@ -358,6 +358,8 @@ def _save_array_payload(
                 zero_tol=xy_zero_tol, y_axis_origin=xy_y_axis_origin,
                 cancellation_event=cancellation_event,
             )
+            if cancellation_event is not None and cancellation_event.is_set():
+                return (False, "CANCELLED during write", points)
             if points == 0:
                 return (
                     False,
@@ -372,6 +374,8 @@ def _save_array_payload(
                 zero_tol=xy_zero_tol, y_axis_origin=xy_y_axis_origin,
                 cancellation_event=cancellation_event,
             )
+            if cancellation_event is not None and cancellation_event.is_set():
+                return (False, "CANCELLED during write", points)
             if points == 0:
                 return (
                     False,
@@ -445,10 +449,10 @@ def save_array(
             metadata=metadata,
             png_options=png_options,
         )
-        if not success:
-            return (False, message, points)
         if cancellation_event and cancellation_event.is_set():
             return (False, "CANCELLED during write", points)
+        if not success:
+            return (False, message, points)
 
         os.replace(str(temp_path), str(out_path))
         temp_path = None

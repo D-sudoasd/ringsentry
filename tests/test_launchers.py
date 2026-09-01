@@ -12,10 +12,33 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHERS = ("START_RingSentry.cmd", "START_RingSentry.bat")
+BAT_WRAPPER_BODY = """@echo off
+setlocal EnableExtensions
+
+set "SCRIPT_DIR=%~dp0"
+call "%SCRIPT_DIR%START_RingSentry.cmd" %*
+exit /b %ERRORLEVEL%
+"""
 
 
-def test_windows_launchers_stay_identical():
-    assert (ROOT / LAUNCHERS[0]).read_bytes() == (ROOT / LAUNCHERS[1]).read_bytes()
+def _normalize_batch(text: str) -> str:
+    return "\n".join(
+        line.rstrip() for line in text.replace("\r\n", "\n").split("\n")
+    ).strip()
+
+
+def _copy_launcher(launch_dir: Path, launcher_name: str) -> None:
+    shutil.copy2(ROOT / launcher_name, launch_dir / launcher_name)
+    if launcher_name.lower().endswith(".bat"):
+        shutil.copy2(ROOT / "START_RingSentry.cmd", launch_dir / "START_RingSentry.cmd")
+
+
+def test_windows_bat_launcher_wraps_cmd():
+    bat_text = (ROOT / "START_RingSentry.bat").read_text(encoding="ascii")
+    cmd_text = (ROOT / "START_RingSentry.cmd").read_text(encoding="ascii")
+    assert bat_text != cmd_text
+    assert _normalize_batch(bat_text) == _normalize_batch(BAT_WRAPPER_BODY)
+    assert 'call "%SCRIPT_DIR%START_RingSentry.cmd" %*' in bat_text
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows batch launcher")
@@ -29,7 +52,7 @@ def test_launcher_skips_broken_first_python_on_path(tmp_path, launcher_name):
     for directory in (launch_dir, bad_dir, good_dir, tools_dir):
         directory.mkdir()
 
-    shutil.copy2(ROOT / launcher_name, launch_dir / launcher_name)
+    _copy_launcher(launch_dir, launcher_name)
     shutil.copy2(Path(os.environ["SystemRoot"]) / "System32" / "where.exe", tools_dir)
     (bad_dir / "py.cmd").write_text("@exit /b 1\n", encoding="ascii")
     (bad_dir / "python.cmd").write_text("@exit /b 1\n", encoding="ascii")
@@ -70,7 +93,7 @@ def test_launcher_skips_version_ok_interpreter_with_missing_dependencies(
     for directory in (launch_dir, bad_dir, good_dir, tools_dir):
         directory.mkdir()
 
-    shutil.copy2(ROOT / launcher_name, launch_dir / launcher_name)
+    _copy_launcher(launch_dir, launcher_name)
     shutil.copy2(Path(os.environ["SystemRoot"]) / "System32" / "where.exe", tools_dir)
     (bad_dir / "python.cmd").write_text(
         "@if defined RINGSENTRY_LAUNCHER_PROBE_SEEN exit /b 1\r\n"
