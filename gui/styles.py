@@ -7,6 +7,11 @@ from tkinter import ttk
 # Keep the application background and status colors in one place so that the
 # labels used by the progress panel remain readable when the theme changes.
 APP_BACKGROUND = "#f6f7f9"
+LOG_BACKGROUND = "#1e1e2e"
+LOG_FOREGROUND = "#cdd6f4"
+TOOLTIP_BACKGROUND = "#fff8d6"
+TOOLTIP_FOREGROUND = "#20242a"
+INVALID_ROW_FOREGROUND = "#595959"
 STATUS_COLORS = {
     "Success.TLabel": "#146c2e",
     "Failed.TLabel": "#b42318",
@@ -54,7 +59,7 @@ def configure_styles(root: tk.Tk):
     style.configure("TNotebook.Tab", font=("Microsoft YaHei UI", 10), padding=[16, 8])
 
     # Log text style
-    style.configure("Log.TFrame", background="#1e1e2e")
+    style.configure("Log.TFrame", background=LOG_BACKGROUND)
 
     # Stats labels.  These colors retain the semantic distinction while
     # meeting WCAG AA normal-text contrast against the application background.

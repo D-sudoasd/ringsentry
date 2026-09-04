@@ -272,6 +272,21 @@ class OverexposureRepairTests(unittest.TestCase):
         try:
             view = tab.OverexposureRepairTab(root, None)
             self.assertTrue(view.dry_run.get())
+            captured = []
+
+            def fake_build():
+                captured.append(view.dry_run.get())
+                raise ValueError("stop-after-dry-run-flag")
+
+            view.build_config = fake_build
+            with mock.patch.object(tab.messagebox, "showerror"):
+                view.start_repair()
+                self.assertEqual(captured, [False])
+                self.assertFalse(view.dry_run.get())
+                captured.clear()
+                view.start_dry_run()
+                self.assertEqual(captured, [True])
+                self.assertTrue(view.dry_run.get())
             rules = view.tab_rules.grid_slaves(row=0, column=0)[0]
             self.assertIn(
                 "采集链证据",

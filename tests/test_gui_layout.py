@@ -87,6 +87,9 @@ class GuiLayoutTests(unittest.TestCase):
             self.assertTrue(hasattr(app.output_tab, "format_vars"))
             self.assertTrue(hasattr(app.geometry_tab, "bin_factor_var"))
             self.assertTrue(hasattr(app.quality_tab, "result_text"))
+            self.assertTrue(hasattr(app.q_calc_tab, "scrollable"))
+            self.assertTrue(hasattr(app.q_calc_tab, "body"))
+            self.assertTrue(hasattr(app.overexposure_tab, "tab_basic_scroll"))
             self.assertEqual(
                 [
                     "文件与输出",
@@ -202,6 +205,8 @@ class GuiLayoutTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             if 'bind_all("<MouseWheel>"' in text or 'unbind_all("<MouseWheel>"' in text:
                 offenders[str(path)] = "uses global mouse-wheel binding"
+            if 'winfo_toplevel().bind("<MouseWheel>"' in text:
+                offenders[str(path)] = "binds MouseWheel on the application toplevel"
 
         self.assertEqual({}, offenders)
 

@@ -106,9 +106,12 @@ class App(tk.Tk):
 
     def _create_widgets(self):
         """Build the UI with Notebook tabs and bottom log panel."""
-        # Top area: Notebook with tabs
-        self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill="both", expand=True, padx=8, pady=(8, 0))
+        # Top area: Notebook with tabs. A vertical paned window keeps the
+        # always-visible log from covering tab content on short displays.
+        self._main_paned = ttk.PanedWindow(self, orient=tk.VERTICAL)
+        self._main_paned.pack(fill="both", expand=True, padx=8, pady=8)
+        self.notebook = ttk.Notebook(self._main_paned)
+        self._main_paned.add(self.notebook, weight=1)
 
         # Tab 1: Input/Output
         self.io_tab = IOTab(self.notebook, self)
@@ -138,9 +141,9 @@ class App(tk.Tk):
         self.q_calc_tab = QCalculatorTab(self.notebook, self)
         self.notebook.add(self.q_calc_tab, text="  Q \u8BA1\u7B97\u5668  ")
 
-        # Bottom area: Log panel (always visible)
-        self.log_panel = LogPanel(self, self)
-        self.log_panel.pack(fill="both", expand=False, padx=8, pady=8)
+        # Bottom area: Log panel (always visible, user-resizable)
+        self.log_panel = LogPanel(self._main_paned, self)
+        self._main_paned.add(self.log_panel, weight=0)
 
     # --- Convenience properties for log ---
     def log(self, msg):

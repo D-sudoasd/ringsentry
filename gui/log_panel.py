@@ -4,6 +4,7 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import ttk
 
+from gui.styles import LOG_BACKGROUND, LOG_FOREGROUND
 from gui.tooltip import ToolTip
 
 
@@ -99,12 +100,15 @@ class LogPanel(ttk.Frame):
         self.log_txt = tk.Text(
             log_label_frame, height=5,
             font=("Consolas", 9), wrap="word",
-            bg="#1e1e2e", fg="#cdd6f4",
-            insertbackground="#cdd6f4",
+            bg=LOG_BACKGROUND, fg=LOG_FOREGROUND,
+            insertbackground=LOG_FOREGROUND,
             yscrollcommand=log_scroll.set,
+            takefocus=True,
+            highlightthickness=1,
         )
         self.log_txt.grid(row=0, column=0, sticky="nsew")
         log_scroll.config(command=self.log_txt.yview)
+        self.log_txt.configure(state="disabled")
 
         self.rowconfigure(3, weight=1)
 
@@ -113,8 +117,10 @@ class LogPanel(ttk.Frame):
         timestamp = datetime.now().strftime("%H:%M:%S")
         line = f"[{timestamp}] {msg}"
         self.run_log_lines.append(line)
+        self.log_txt.configure(state="normal")
         self.log_txt.insert('end', line + "\n")
         self.log_txt.see('end')
+        self.log_txt.configure(state="disabled")
 
     def update_stats_display(self, stats, done_count, total_count, start_time):
         """Update statistics labels and ETA."""
