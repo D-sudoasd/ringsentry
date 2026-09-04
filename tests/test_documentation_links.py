@@ -10,7 +10,7 @@ from urllib.parse import unquote
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_SOURCE_RE = re.compile(r"(?:src|href)=[\"']([^\"']+)[\"']", re.IGNORECASE)
-EXCLUDED_PARTS = {".git", ".pytest_cache", ".ruff_cache", "__pycache__"}
+EXCLUDED_PARTS = {".git", ".pytest_cache", ".ruff_cache", ".codex_tmp", "__pycache__"}
 
 
 def _targets_outside_fenced_code(text: str):
