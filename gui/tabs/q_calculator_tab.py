@@ -9,6 +9,8 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 
 import numpy as np
 
+from gui.layout import ScrollableFrame
+from gui.styles import APP_BACKGROUND, INVALID_ROW_FOREGROUND
 from gui.tooltip import ToolTip
 from core.diffraction_model import DiffractionModel, BEAMLINE_PRESETS
 from core.plot_style import (
@@ -207,47 +209,27 @@ class QCalculatorTab(ttk.Frame):
     def _create_widgets(self):
         paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
-        # --- Left panel (scrollable, wider) ---
-        left_outer = ttk.Frame(paned)
+        left_outer = ttk.Frame(paned, width=560)
         paned.add(left_outer, weight=0)
-        left_canvas = tk.Canvas(left_outer, width=420, highlightthickness=0)
-        left_scroll = ttk.Scrollbar(left_outer, orient="vertical", command=left_canvas.yview)
-        self._left_frame = ttk.Frame(left_canvas)
-        self._left_frame.bind(
-            "<Configure>",
-            lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all")),
-        )
-        left_canvas.create_window((0, 0), window=self._left_frame, anchor="nw")
-        # Make inner frame resize with canvas width
-        left_canvas.bind(
-            "<Configure>",
-            lambda e: left_canvas.itemconfigure(
-                left_canvas.find_all()[0] if left_canvas.find_all() else 0,
-                width=e.width,
-            ),
-        )
-        left_canvas.configure(yscrollcommand=left_scroll.set)
-        left_canvas.pack(side="left", fill="both", expand=True)
-        left_scroll.pack(side="right", fill="y")
-        # Mouse wheel scrolling
-        def _on_mousewheel(event):
-            x0 = left_canvas.winfo_rootx()
-            y0 = left_canvas.winfo_rooty()
-            x1 = x0 + left_canvas.winfo_width()
-            y1 = y0 + left_canvas.winfo_height()
-            if not (x0 <= event.x_root <= x1 and y0 <= event.y_root <= y1):
-                return None
-            left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            return "break"
-        self.winfo_toplevel().bind("<MouseWheel>", _on_mousewheel, add="+")
-        left = self._left_frame
-        # --- Right panel (plot) ---
+        left_outer.columnconfigure(0, weight=1)
+        left_outer.rowconfigure(0, weight=1)
+        left_outer.rowconfigure(1, weight=0)
+
+        self.scrollable = ScrollableFrame(left_outer, padding=4)
+        self.scrollable.grid(row=0, column=0, sticky="nsew")
+        self.body = self.scrollable.body
+        self._left_frame = self.body
+
+        results = ttk.Frame(left_outer)
+        results.grid(row=1, column=0, sticky="nsew")
+        results.columnconfigure(0, weight=1)
+
         right = ttk.Frame(paned)
         paned.add(right, weight=1)
-        self._build_left_panel(left)
+        self._build_left_panel(self.body, results)
         self._build_right_panel(right)
     # ---- Left panel widgets ----
-    def _build_left_panel(self, left: ttk.Frame):
+    def _build_left_panel(self, left: ttk.Frame, results: ttk.Frame):
         # -- Preset --
         lf_preset = ttk.LabelFrame(left, text="  Beamline Preset / \u7ebf\u7ad9\u9884\u8bbe  ", padding=8)
         lf_preset.pack(fill="x", padx=4, pady=(0, 6))
@@ -302,7 +284,7 @@ class QCalculatorTab(ttk.Frame):
         ttk.Label(
             lf_geom,
             text="  >> \u8f93\u5165 \u03bb \u6216 E \u5373\u53ef\uff0c\u53e6\u4e00\u4e2a\u81ea\u52a8\u66f4\u65b0",
-            foreground="#555555", font=("", 8),
+            style="Muted.TLabel", font=("", 8),
         ).pack(anchor="w", pady=(0, 4))
 
         _add_param(lf_geom, "Distance D (mm):", "distance_mm", "3000",
@@ -402,7 +384,7 @@ class QCalculatorTab(ttk.Frame):
         ttk.Label(
             tab_list,
             text="(\u82e5\u975e\u7a7a\uff0c\u5217\u8868\u4f1a\u8986\u76d6 Range \u8bbe\u7f6e)",
-            foreground="#666666", font=("", 8),
+            style="Muted.TLabel", font=("", 8),
         ).pack(anchor="w", pady=(2, 0))
 
         # -- Action buttons --
@@ -433,8 +415,8 @@ class QCalculatorTab(ttk.Frame):
             "\u5b57\u53f7\u3001\u7ebf\u5bbd\u548c\u8fb9\u8ddd\u3002",
         )
 
-        # -- Results table --
-        lf_res = ttk.LabelFrame(left, text="  Results / \u7ed3\u679c  ", padding=6)
+        # -- Results table (sibling of the parameter scroller so the tree owns yview) --
+        lf_res = ttk.LabelFrame(results, text="  Results / \u7ed3\u679c  ", padding=6)
         lf_res.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
 
         cols = ("Q", "2th(deg)", "d(A)", "r(mm)", "r(px)", "Physics", "Detector")
@@ -444,8 +426,13 @@ class QCalculatorTab(ttk.Frame):
         col_widths = {"Q": 72, "2th(deg)": 70, "d(A)": 72, "r(mm)": 68, "r(px)": 68, "Physics": 74, "Detector": 88}
         for c in cols:
             self.tree.heading(c, text=c)
+            stretch = c in {"Physics", "Detector"}
             self.tree.column(
-                c, width=col_widths.get(c, 68), anchor="center", minwidth=50, stretch=False,
+                c,
+                width=col_widths.get(c, 68),
+                anchor="center",
+                minwidth=50,
+                stretch=stretch,
             )
 
         ysb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
@@ -457,10 +444,12 @@ class QCalculatorTab(ttk.Frame):
         tree_frame.rowconfigure(0, weight=1)
         tree_frame.columnconfigure(0, weight=1)
         self.tree.tag_configure("out-of-detector", foreground="#9a6700")
-        self.tree.tag_configure("invalid", foreground="#777777")
+        self.tree.tag_configure("invalid", foreground=INVALID_ROW_FOREGROUND)
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
-        ttk.Button(left, text="\u590d\u5236\u8868\u683c (Copy TSV)", command=self._copy_table).pack(fill="x", padx=4)
+        ttk.Button(
+            results, text="\u590d\u5236\u8868\u683c (Copy TSV)", command=self._copy_table
+        ).pack(fill="x", padx=4, pady=(0, 4))
 
     # ---- Right panel (plot) ----
 
@@ -476,7 +465,7 @@ class QCalculatorTab(ttk.Frame):
         )
         status = tk.Label(
             right, textvariable=self.status_var,
-            relief=tk.SUNKEN, anchor="w", bg="#e7e7e7", font=("Consolas", 9),
+            relief=tk.SUNKEN, anchor="w", bg=APP_BACKGROUND, font=("Consolas", 9),
             padx=4, pady=2,
         )
         status.pack(fill="x")

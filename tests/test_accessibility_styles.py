@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from gui.layout import ScrollableFrame
-from gui.styles import APP_BACKGROUND, STATUS_COLORS
+from gui.styles import APP_BACKGROUND, INVALID_ROW_FOREGROUND, STATUS_COLORS
 from gui.tooltip import ToolTip
 
 
@@ -34,11 +34,25 @@ def _contrast_ratio(foreground, background):
 
 
 class _FakeWidget:
-    def __init__(self, path=".widget", root_y=0, height=20):
+    def __init__(
+        self,
+        path=".widget",
+        root_x=0,
+        root_y=0,
+        width=80,
+        height=20,
+        screen_width=1024,
+        screen_height=768,
+    ):
         self.path = path
+        self.root_x = root_x
         self.root_y = root_y
+        self.width = width
         self.height = height
+        self.screen_width = screen_width
+        self.screen_height = screen_height
         self.bindings = {}
+        self._ringsentry_tooltip_escape = False
 
     def __str__(self):
         return self.path
@@ -48,26 +62,42 @@ class _FakeWidget:
         return sequence
 
     def winfo_rootx(self):
-        return 0
+        return self.root_x
 
     def winfo_rooty(self):
         return self.root_y
 
+    def winfo_width(self):
+        return self.width
+
     def winfo_height(self):
         return self.height
+
+    def winfo_screenwidth(self):
+        return self.screen_width
+
+    def winfo_screenheight(self):
+        return self.screen_height
+
+    def winfo_toplevel(self):
+        return self
+
+    def winfo_viewable(self):
+        return True
+
+    def winfo_class(self):
+        return "TFrame"
 
 
 class _FakeCanvas(_FakeWidget):
     def __init__(self):
-        super().__init__(path=".frame.canvas", root_y=100, height=100)
+        super().__init__(path=".frame.canvas", root_y=100, height=100, width=200)
         self.scroll_calls = []
         self.move_calls = []
+        self.viewable = True
 
-    def winfo_rootx(self):
-        return 0
-
-    def winfo_width(self):
-        return 200
+    def winfo_viewable(self):
+        return self.viewable
 
     def update_idletasks(self):
         return None
@@ -90,16 +120,29 @@ class _FakeTipWindow:
 
     def __init__(self, _parent):
         self.destroyed = False
+        self.geometry = None
         self.__class__.instances.append(self)
 
     def winfo_exists(self):
         return not self.destroyed
 
+    def winfo_reqwidth(self):
+        return 200
+
+    def winfo_reqheight(self):
+        return 80
+
+    def update_idletasks(self):
+        return None
+
     def wm_overrideredirect(self, _value):
         return None
 
-    def wm_geometry(self, _geometry):
+    def wm_attributes(self, *_args, **_kwargs):
         return None
+
+    def wm_geometry(self, geometry):
+        self.geometry = geometry
 
     def destroy(self):
         self.destroyed = True
@@ -120,6 +163,9 @@ class AccessibilityStylesTests(unittest.TestCase):
                 self.assertGreaterEqual(
                     _contrast_ratio(color, APP_BACKGROUND), 4.5
                 )
+        self.assertGreaterEqual(
+            _contrast_ratio(INVALID_ROW_FOREGROUND, "#ffffff"), 4.5
+        )
 
     def test_status_labels_are_textual_and_not_color_only(self):
         source = Path("gui/log_panel.py").read_text(encoding="utf-8")
@@ -144,7 +190,15 @@ class AccessibilityStylesTests(unittest.TestCase):
         ):
             tooltip = ToolTip(widget, "help")
             self.assertEqual(
-                {"<Enter>", "<Leave>", "<FocusIn>", "<FocusOut>", "<Escape>"},
+                {
+                    "<Enter>",
+                    "<Leave>",
+                    "<FocusIn>",
+                    "<FocusOut>",
+                    "<Escape>",
+                    "<Unmap>",
+                    "<Destroy>",
+                },
                 set(widget.bindings),
             )
             tooltip.show_tip()
@@ -155,6 +209,24 @@ class AccessibilityStylesTests(unittest.TestCase):
             tooltip.show_tip()
             widget.bindings["<Escape>"][0]()
             self.assertIsNone(tooltip.tip_window)
+
+    def test_tooltip_stays_on_screen_near_bottom_right_edge(self):
+        widget = _FakeWidget(root_x=900, root_y=720, width=80, height=24)
+        _FakeTipWindow.instances = []
+        with patch("gui.tooltip.tk.Toplevel", _FakeTipWindow), patch(
+            "gui.tooltip.tk.Label", _FakeLabel
+        ):
+            tooltip = ToolTip(widget, "help that would otherwise overflow")
+            tooltip.show_tip()
+            geometry = _FakeTipWindow.instances[-1].geometry
+            self.assertIsNotNone(geometry)
+            _, xy = geometry.split("+", 1)
+            x_text, y_text = xy.split("+", 1)
+            x, y = int(x_text), int(y_text)
+            self.assertGreaterEqual(x, 8)
+            self.assertGreaterEqual(y, 8)
+            self.assertLessEqual(x + 200, 1024)
+            self.assertLessEqual(y + 80, 768)
 
     def test_scrollable_frame_handles_wheel_keys_and_focus(self):
         frame = object.__new__(ScrollableFrame)
@@ -199,8 +271,30 @@ class AccessibilityStylesTests(unittest.TestCase):
         )
         self.assertEqual(len(frame.canvas.scroll_calls), before)
 
+        before_outside = len(frame.canvas.scroll_calls)
+        frame._on_mousewheel(SimpleNamespace(x_root=10, y_root=50, delta=120))
+        self.assertEqual(len(frame.canvas.scroll_calls), before_outside)
+        nested = _FakeWidget(path=".frame.body.text", root_y=110, height=20)
+        nested.winfo_class = lambda: "Text"
+        before_nested = len(frame.canvas.scroll_calls)
+        self.assertIsNone(
+            frame._on_mousewheel(
+                SimpleNamespace(widget=nested, x_root=10, y_root=110, delta=120)
+            )
+        )
+        self.assertEqual(len(frame.canvas.scroll_calls), before_nested)
+        frame.canvas.viewable = False
+        self.assertIsNone(
+            frame._on_mousewheel(SimpleNamespace(x_root=10, y_root=110, delta=120))
+        )
+        frame.canvas.viewable = True
+
         frame._on_focus_in(SimpleNamespace(widget=child))
         self.assertTrue(frame.canvas.move_calls[-1] > 0)
+        visible = _FakeWidget(path=".frame.body.visible", root_y=120, height=20)
+        before_move = len(frame.canvas.move_calls)
+        frame._on_focus_in(SimpleNamespace(widget=visible))
+        self.assertEqual(len(frame.canvas.move_calls), before_move)
 
     def test_accent_button_keeps_theme_label_when_sv_ttk_applied(self):
         import tkinter as tk

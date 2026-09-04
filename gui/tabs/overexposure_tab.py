@@ -16,6 +16,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from core.constants import APP_VERSION as RINGSENTRY_APP_VERSION
+from gui.layout import ScrollableFrame
 from gui.tooltip import ToolTip
 
 try:
@@ -119,15 +120,19 @@ class OverexposureRepairTab(ttk.Frame):
         self.repair_notebook = nb
         nb.grid(row=1, column=0, sticky="nsew", pady=(10, 8))
 
-        self.tab_basic = ttk.Frame(nb, padding=10)
-        self.tab_rules = ttk.Frame(nb, padding=10)
-        self.tab_safety = ttk.Frame(nb, padding=10)
-        self.tab_meta = ttk.Frame(nb, padding=10)
+        self.tab_basic_scroll = ScrollableFrame(nb, padding=10)
+        self.tab_rules_scroll = ScrollableFrame(nb, padding=10)
+        self.tab_safety_scroll = ScrollableFrame(nb, padding=10)
+        self.tab_meta_scroll = ScrollableFrame(nb, padding=10)
         self.tab_log = ttk.Frame(nb, padding=10)
-        nb.add(self.tab_basic, text="文件与输出")
-        nb.add(self.tab_rules, text="修复规则")
-        nb.add(self.tab_safety, text="安全与复现")
-        nb.add(self.tab_meta, text="项目元数据")
+        self.tab_basic = self.tab_basic_scroll.body
+        self.tab_rules = self.tab_rules_scroll.body
+        self.tab_safety = self.tab_safety_scroll.body
+        self.tab_meta = self.tab_meta_scroll.body
+        nb.add(self.tab_basic_scroll, text="文件与输出")
+        nb.add(self.tab_rules_scroll, text="修复规则")
+        nb.add(self.tab_safety_scroll, text="安全与复现")
+        nb.add(self.tab_meta_scroll, text="项目元数据")
         nb.add(self.tab_log, text="日志")
 
         self._layout_basic()
@@ -138,36 +143,47 @@ class OverexposureRepairTab(ttk.Frame):
 
         action = ttk.Frame(self)
         action.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        action.columnconfigure(6, weight=1)
-        self.scan_btn = ttk.Button(
-            action, text="只扫描", command=lambda: self.start("scan")
-        )
-        self.scan_btn.grid(row=0, column=0, padx=4)
-        self.dry_btn = ttk.Button(
-            action, text="模拟修复 Dry-run", command=self.start_dry_run
-        )
-        self.dry_btn.grid(row=0, column=1, padx=4)
-        self.run_btn = ttk.Button(
-            action, text="开始安全修复", command=lambda: self.start("repair")
-        )
-        self.run_btn.grid(row=0, column=2, padx=4)
-        self.stop_btn = ttk.Button(
-            action, text="停止后续任务", command=self.stop, state="disabled"
-        )
-        self.stop_btn.grid(row=0, column=3, padx=4)
-        self.open_out_btn = ttk.Button(
-            action, text="打开输出目录", command=self.open_output, state="disabled"
-        )
-        self.open_out_btn.grid(row=0, column=4, padx=4)
-        self.open_report_btn = ttk.Button(
-            action, text="打开 QC 报告", command=self.open_report, state="disabled"
-        )
-        self.open_report_btn.grid(row=0, column=5, padx=4)
-        self.progress = ttk.Progressbar(action, orient="horizontal", mode="determinate")
-        self.progress.grid(row=0, column=6, sticky="ew", padx=8)
+        action.columnconfigure(0, weight=1)
 
-        ttk.Label(self, textvariable=self.status).grid(row=3, column=0, sticky="ew")
-        ttk.Label(self, textvariable=self.summary, foreground="#444").grid(
+        primary = ttk.Frame(action)
+        primary.grid(row=0, column=0, sticky="w")
+        self.scan_btn = ttk.Button(
+            primary, text="只扫描", command=lambda: self.start("scan")
+        )
+        self.scan_btn.pack(side="left", padx=(0, 6))
+        self.dry_btn = ttk.Button(
+            primary, text="模拟修复 Dry-run", command=self.start_dry_run
+        )
+        self.dry_btn.pack(side="left", padx=(0, 6))
+        self.run_btn = ttk.Button(
+            primary, text="开始安全修复", command=self.start_repair
+        )
+        self.run_btn.pack(side="left", padx=(0, 6))
+        self.stop_btn = ttk.Button(
+            primary, text="停止后续任务", command=self.stop, state="disabled"
+        )
+        self.stop_btn.pack(side="left")
+
+        secondary = ttk.Frame(action)
+        secondary.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        secondary.columnconfigure(2, weight=1)
+        self.open_out_btn = ttk.Button(
+            secondary, text="打开输出目录", command=self.open_output, state="disabled"
+        )
+        self.open_out_btn.grid(row=0, column=0, padx=(0, 6))
+        self.open_report_btn = ttk.Button(
+            secondary, text="打开 QC 报告", command=self.open_report, state="disabled"
+        )
+        self.open_report_btn.grid(row=0, column=1, padx=(0, 8))
+        self.progress = ttk.Progressbar(
+            secondary, orient="horizontal", mode="determinate"
+        )
+        self.progress.grid(row=0, column=2, sticky="ew")
+
+        ttk.Label(self, textvariable=self.status, style="Muted.TLabel").grid(
+            row=3, column=0, sticky="ew"
+        )
+        ttk.Label(self, textvariable=self.summary, style="Muted.TLabel").grid(
             row=4, column=0, sticky="ew"
         )
 
@@ -278,7 +294,7 @@ class OverexposureRepairTab(ttk.Frame):
             "零值也可能来自 beamstop、模块间隙、掩膜或真实低计数；未经确认不应修改。\n"
             "本工具不能恢复真实过曝强度；它只执行用户已确认的存储值替换规则。"
         )
-        ttk.Label(f, text=info, foreground="#555", justify="left").grid(
+        ttk.Label(f, text=info, style="Muted.TLabel", justify="left").grid(
             row=1, column=0, sticky="ew", pady=12
         )
 
@@ -317,7 +333,7 @@ class OverexposureRepairTab(ttk.Frame):
             f,
             text=criteria,
             font=("TkFixedFont", 10),
-            foreground="#115511",
+            style="Success.TLabel",
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=14)
 
@@ -529,6 +545,10 @@ class OverexposureRepairTab(ttk.Frame):
         self.dry_run.set(True)
         self.start("repair")
 
+    def start_repair(self):
+        self.dry_run.set(False)
+        self.start("repair")
+
     def _conversion_is_active(self):
         """Return whether the main conversion batch currently owns the GUI."""
         app = getattr(self, "app", None)
@@ -657,13 +677,11 @@ class OverexposureRepairTab(ttk.Frame):
                             "有文件未通过处理或校验。请查看 CSV 和 QC 报告。",
                         )
                     self.set_running(False)
-                    self.dry_run.set(False)
                 elif kind == "error":
                     self.log(str(payload))
                     messagebox.showerror("运行错误", str(payload))
                     self.status.set("错误。")
                     self.set_running(False)
-                    self.dry_run.set(False)
         except queue.Empty:
             pass
         self._poll_after_id = self.after(100, self._poll)

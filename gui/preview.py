@@ -416,7 +416,7 @@ def _present_preview_window(app, snapshot, payload):
         )
         ttk.Label(
             control_frame, textvariable=mode_hint,
-            foreground="gray",
+            style="Muted.TLabel",
         ).pack(side="left", padx=20)
 
         def clear_roi_callback():

@@ -71,7 +71,7 @@ class QualityTab(ttk.Frame):
         ttk.Label(
             workflow,
             text="本页只给出质控事实、风险解释和参数建议，不会自动修改任何设置。",
-            foreground="#555555",
+            style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
         controls = ttk.LabelFrame(body, text="自动质控推荐", padding=10)
@@ -107,7 +107,7 @@ class QualityTab(ttk.Frame):
         ttk.Label(
             controls,
             textvariable=self.status_var,
-            foreground="#555555",
+            style="Muted.TLabel",
         ).grid(row=0, column=3, columnspan=2, sticky="w")
 
         suggestion_frame = ttk.LabelFrame(

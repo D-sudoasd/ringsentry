@@ -3,6 +3,33 @@
 import tkinter as tk
 from tkinter import ttk
 
+_NESTED_SCROLL_CLASSES = {
+    "Text",
+    "Treeview",
+    "TTreeview",
+    "Listbox",
+}
+
+
+def wheel_scroll_units(event):
+    """Normalize Windows/macOS wheel deltas and Linux wheel buttons."""
+    event_num = str(getattr(event, "num", ""))
+    if event_num == "4":
+        return -1
+    if event_num == "5":
+        return 1
+    try:
+        delta = float(getattr(event, "delta", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+    if delta == 0:
+        return 0
+    # Windows commonly reports multiples of 120; macOS trackpads
+    # often report small +/-1 deltas. Preserve both by guaranteeing
+    # at least one unit for every non-zero event.
+    magnitude = max(1, int(abs(delta) / 120))
+    return -magnitude if delta > 0 else magnitude
+
 
 class ScrollableFrame(ttk.Frame):
     """A vertically scrollable ttk frame with a public ``body`` container.
@@ -18,7 +45,9 @@ class ScrollableFrame(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
+        self.canvas = tk.Canvas(
+            self, highlightthickness=0, borderwidth=0, takefocus=0
+        )
         self.scrollbar = ttk.Scrollbar(
             self, orient="vertical", command=self.canvas.yview
         )
@@ -124,12 +153,34 @@ class ScrollableFrame(ttk.Frame):
             return False
         return False
 
+    def _is_nested_scroll_widget(self, widget):
+        """Return whether ``widget`` should keep its own vertical scrolling."""
+        if widget is None or widget is self.canvas:
+            return False
+        try:
+            widget_class = str(widget.winfo_class())
+        except (AttributeError, tk.TclError):
+            widget_class = type(widget).__name__
+        if widget_class not in _NESTED_SCROLL_CLASSES:
+            return False
+        return self._is_scrollable_widget(widget)
+
     def _event_over_canvas(self, event):
-        """Return whether a pointer event is inside this canvas viewport."""
+        """Return whether a pointer event is inside this visible canvas."""
+        try:
+            if not self.canvas.winfo_viewable():
+                return False
+        except (AttributeError, tk.TclError):
+            return False
+
+        widget = getattr(event, "widget", None)
+        if self._is_nested_scroll_widget(widget):
+            return False
+
         x_root = getattr(event, "x_root", None)
         y_root = getattr(event, "y_root", None)
         if x_root is None or y_root is None:
-            return self._is_scrollable_widget(getattr(event, "widget", None))
+            return self._is_scrollable_widget(widget)
 
         try:
             x0 = self.canvas.winfo_rootx()
@@ -145,23 +196,14 @@ class ScrollableFrame(ttk.Frame):
         if not self._event_over_canvas(event):
             return None
 
-        event_num = getattr(event, "num", None)
-        if str(event_num) == "4":
-            units = -1
-        elif str(event_num) == "5":
-            units = 1
-        else:
-            try:
-                delta = float(getattr(event, "delta", 0) or 0)
-            except (TypeError, ValueError):
-                return None
-            if delta == 0:
-                return None
-            # Windows commonly reports multiples of 120; macOS trackpads
-            # often report small +/-1 deltas. Preserve both by guaranteeing
-            # at least one unit for every non-zero event.
-            magnitude = max(1, int(abs(delta) / 120))
-            units = -magnitude if delta > 0 else magnitude
+        units = wheel_scroll_units(event)
+        if not units:
+            return None
+
+        from gui.tooltip import ToolTip
+
+        if ToolTip._active is not None:
+            ToolTip._active.hide_tip()
 
         self.canvas.yview_scroll(units, "units")
         return "break"

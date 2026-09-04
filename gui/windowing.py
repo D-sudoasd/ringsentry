@@ -31,6 +31,39 @@ def calculate_window_bounds(
     return width, height, x, y, min_width, min_height
 
 
+def clamp_popup_geometry(
+    screen_size,
+    anchor_box,
+    popup_size,
+    margin=8,
+    offset=(8, 6),
+):
+    """Return ``(x, y)`` for a popup that stays fully on-screen.
+
+    ``anchor_box`` is ``(x, y, width, height)`` in screen coordinates.
+    The popup is placed below the anchor when it fits, otherwise above.
+    Horizontal overflow is shifted left rather than clipped.
+    """
+    screen_width, screen_height = (max(1, int(value)) for value in screen_size)
+    anchor_x, anchor_y, _anchor_width, anchor_height = (
+        int(value) for value in anchor_box
+    )
+    popup_width, popup_height = (max(1, int(value)) for value in popup_size)
+    margin = max(0, int(margin))
+    offset_x, offset_y = (int(value) for value in offset)
+
+    x = anchor_x + offset_x
+    y = anchor_y + anchor_height + offset_y
+    if y + popup_height + margin > screen_height:
+        y = anchor_y - popup_height - offset_y
+
+    max_x = max(margin, screen_width - popup_width - margin)
+    max_y = max(margin, screen_height - popup_height - margin)
+    x = min(max(margin, x), max_x)
+    y = min(max(margin, y), max_y)
+    return x, y
+
+
 def fit_window_to_screen(
     window,
     preferred_size,

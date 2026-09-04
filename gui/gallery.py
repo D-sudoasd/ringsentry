@@ -17,7 +17,10 @@ import numpy as np
 
 from core.loader import load_image, _lazy_import_matplotlib
 from core.plot_style import apply_matplotlib_style, style_axis
+from gui.layout import wheel_scroll_units
 from gui.windowing import fit_window_to_screen
+
+_wheel_scroll_units = wheel_scroll_units
 
 
 def _thumbnail_dimensions(shape, max_size=64):
@@ -31,23 +34,6 @@ def _thumbnail_dimensions(shape, max_size=64):
     display_width = max(1, int(round(width * scale)))
     display_height = max(1, int(round(height * scale)))
     return display_width, display_height
-
-
-def _wheel_scroll_units(event):
-    """Normalize Windows/macOS wheel deltas and Linux wheel buttons."""
-    event_num = str(getattr(event, "num", ""))
-    if event_num == "4":
-        return -1
-    if event_num == "5":
-        return 1
-    try:
-        delta = float(getattr(event, "delta", 0) or 0)
-    except (TypeError, ValueError):
-        return 0
-    if delta == 0:
-        return 0
-    magnitude = max(1, int(abs(delta) / 120))
-    return -magnitude if delta > 0 else magnitude
 
 
 def _open_full_preview(app, file_path):
@@ -125,7 +111,7 @@ def show_gallery(app):
     ttk.Label(
         ctrl_frame,
         text="\u70B9\u51FB\u7F29\u7565\u56FE\u6253\u5F00\u5B8C\u6574\u9884\u89C8",
-        foreground="gray",
+        style="Muted.TLabel",
     ).pack(side="right", padx=5)
 
     # --- Scrollable area ---
@@ -159,13 +145,18 @@ def show_gallery(app):
 
     # Mouse wheel scrolling
     def _on_mousewheel(event):
+        try:
+            if not outer_canvas.winfo_viewable():
+                return None
+        except tk.TclError:
+            return None
         x0 = outer_canvas.winfo_rootx()
         y0 = outer_canvas.winfo_rooty()
         x1 = x0 + outer_canvas.winfo_width()
         y1 = y0 + outer_canvas.winfo_height()
-        if not (x0 <= event.x_root <= x1 and y0 <= event.y_root <= y1):
+        if not (x0 <= event.x_root < x1 and y0 <= event.y_root < y1):
             return None
-        units = _wheel_scroll_units(event)
+        units = wheel_scroll_units(event)
         if not units:
             return None
         outer_canvas.yview_scroll(units, "units")
@@ -282,7 +273,7 @@ def show_gallery(app):
                 frame,
                 text=f"{orig_shape[0]}x{orig_shape[1]}",
                 font=("Consolas", 6),
-                foreground="gray",
+                style="Muted.TLabel",
             ).pack()
 
     def load_thumbnails():
