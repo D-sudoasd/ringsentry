@@ -165,11 +165,24 @@ def test_sdist_manifest_declares_review_materials():
     assert required_directives <= set(manifest.splitlines())
 
 
+def test_gitignore_excludes_local_pytest_temp_dir():
+    gitignore = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
+    ignored = {
+        line.strip()
+        for line in gitignore.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    assert ".codex_tmp/" in ignored
+    assert ".pytest_cache/" in ignored
+    assert ".ruff_cache/" in ignored
+
+
 def test_built_distributions_separate_review_sources_from_runtime():
     ignored_names = {
         ".git",
         ".pytest_cache",
         ".ruff_cache",
+        ".codex_tmp",
         "*.egg-info",
         "__pycache__",
         "build",
